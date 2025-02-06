@@ -31,8 +31,9 @@
 //  01/10/19  Changed abbreviatons on BMS status messages to easier understand their meaning.
 //  02/01/25  Removed code repeats in clock statements. Added "hrs" plural condition and associated string, and arithmetic expression for hrs above 120 displayed as days.
 //  03/02/25  Added data structures to allow instant CAN and function variables globally without redeclaration. Also added Macros which are not consuming storage, for easier code writing. Saved 3290 bytes
+//  06/02/25  Forgot to add sort_can() to loop and this added +4,5 kbytes to sketch size :o also added high temp warning in form of warning sign as well as status message and weak cell identifier
 //
-//  Sketch 23578 bytes
+//  Sketch 28084 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -74,7 +75,6 @@ struct CanData {
   float instU = 0;            // Voltage - multiplied by 10
   float instI = 0;            // Current - multiplied by 10 - negative value indicates charge
   float avgI = 0;             // Average current for clock and sun symbol calculations
-  //float absI;             // Absolute Current NOT WORKING CORREClTY
   float ah = 0;               // Amp hours
   float hC = 0;               // High Cell Voltage in 0,0001V
   float lC = 0;               // Low Cell Voltage in 0,0001V
@@ -152,7 +152,9 @@ uint8_t c = 180;              // 8 bit unsigned integer range from 0-255 (low - 
 
 #define CAN_RX_ID   canMsgData.rxId
 #define CAN_RX_BUF  canMsgData.rxBuf
-  
+
+#define CAPACITY    200
+
 //  Button settings
 const byte buttonPin = 2;         // Pin assigned for button
 uint32_t millis_held = 0;         // 4 byte variable for storing duration button is held down
@@ -212,7 +214,7 @@ void sort_can() {
     if (CAN_RX_ID == 0x3B) {
         VOLT = ((CAN_RX_BUF[0] << 8) + CAN_RX_BUF[1]) / 10.0;
         AMPS = (signValue((CAN_RX_BUF[2] << 8) + CAN_RX_BUF[3])) / 10.0; // orion2jr issue: unsigned value despite ticket as signed
-        //canData.absI = ((CAN_RX_BUF[4] << 8) + CAN_RX_BUF[5]) / 10.0; // orion2jr issue: set signed and -32767 to fix
+        //CAPACITY = ((CAN_RX_BUF[4] << 8) + CAN_RX_BUF[5]) / 10.0; // not available on orionJr
         SOC = CAN_RX_BUF[6] / 2;
     }
     if (CAN_RX_ID == 0x6B2) {
@@ -293,22 +295,22 @@ void amperage(uint8_t angle, display_data_t *data) {
   // Draw 3 different scale labels
   u8g2.setFont(u8g2_font_chikita_tf);
   // Scale from -250 till 250
-  if (AMPS > 1000 || AMPS < -1000) {
+  if (AMPS > 100 || AMPS < -100) {
     u8g2.drawStr(0, 22, "250");                   
     u8g2.drawStr(106, 22, "-250");
   }
   // Scale from -100 till 100
-  else if (AMPS > 500 || AMPS < -500) {
+  else if (AMPS > 50 || AMPS < -50) {
     u8g2.drawStr(0, 24, "100");                   
     u8g2.drawStr(110, 24, "-100");
   }
   // Scale from -50 till 50
-  else if (AMPS > 100 || AMPS <-100) {
+  else if (AMPS > 10 || AMPS <-10) {
     u8g2.drawStr(0, 26, "50");                   
     u8g2.drawStr(112, 26, "-50");
   }
   // Scale from -10 till 10
-  else if (AMPS > 50 || AMPS < -50) {
+  else if (AMPS > 5 || AMPS < -5) {
     u8g2.drawStr(0, 28, "10");                   
     u8g2.drawStr(115, 28, "-10");
   }
@@ -444,17 +446,17 @@ void gauge(uint8_t angle, display_data_t *data) {
   u8g2.print(WATTS);
   
   // Draw lightening bolt when charge current above 20A and charge safety relay is closed
-  if (AMPS < -200 && (RELAYS & 0b00000100) == 0b00000100) {
+  if (AMPS < -20 && (RELAYS & 0b00000100) == 0b00000100) {
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 40, 67);
   }
   // Draw sun when charge current is above 0A and charge relay is closed and charge safety relay is open or above 30A charge and charge safety relay closed
-  if (AVG_AMPS < 0 && (RELAYS & 0b00000010) == 0b00000010 && (RELAYS & 0b00000100) != 0b00000100 || AVG_AMPS < -300 && (RELAYS & 0b00000010) == 0b00000010 && (RELAYS & 0b00000100) == 0b00000100) {
+  if (AVG_AMPS < 0 && (RELAYS & 0b00000010) == 0b00000010 && (RELAYS & 0b00000100) != 0b00000100 || AVG_AMPS < -30 && (RELAYS & 0b00000010) == 0b00000010 && (RELAYS & 0b00000100) == 0b00000100) {
     u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
     u8g2.drawGlyph(4, 39, 69);
   }
-  // Draw warning symbol at and below 20% State of Charge if charge safety relay is open
-  if (SOC <= 40 && (RELAYS & 0b00000100) != 0b00000100) {   // soc from canbus is multiplied by 2
+  // Draw warning symbol at and below 20% SOC if discharge or battery high temperature
+  if (SOC <= 20 && AVG_AMPS > 0 || HI_TEMP > 35) {
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 39, 71);
   }
@@ -467,12 +469,12 @@ void gauge(uint8_t angle, display_data_t *data) {
   // Draw battery icon
   u8g2.drawFrame( 1, 0, 22, 9);
   u8g2.drawFrame( 23, 2, 2, 5);
-  u8g2.drawBox( 3, 2, SOC / 2 * 0.18, 5);
+  u8g2.drawBox( 3, 2, SOC * 0.18, 5);
 
   // Draw state of charge
   u8g2.setCursor(4,16);
   u8g2.setFont(u8g2_font_chikita_tf);
-  u8g2.print(SOC / 2);
+  u8g2.print(SOC);
   u8g2.print('%');
   
   // Draw clock
@@ -482,13 +484,13 @@ void gauge(uint8_t angle, display_data_t *data) {
   char c[4] = {"hrs"};
   // Discharge
   if (AVG_AMPS > 0) {
-    h = SOC / (AVG_AMPS / 10.0);
-    m = (SOC / (AVG_AMPS / 10.0) - h) * 60;
+    h = SOC / AVG_AMPS;
+    m = (SOC / AVG_AMPS - h) * 60;
   }
   // Charge
   else {
-    h = (200 - SOC) / (abs(AVG_AMPS) / 10.0);
-    m = ((200 - SOC) / (abs(AVG_AMPS) / 10.0) - h) * 60;
+    h = (CAPACITY - SOC) / abs(AVG_AMPS);
+    m = ((CAPACITY - SOC) / (abs(AVG_AMPS)) - h) * 60;
   }
   // Adjust x - positon
   if (h > 99 && h <= 120 || h >= 240) { // AND has higher precedence than OR so essentially this is "(h>99 && h<=120) || h>=240"
@@ -816,6 +818,10 @@ void text(display_data_t *data) {
     u8g2.drawStr(x - 2, 16 + y, "CellBlcg");
     y += 7;
   }
+  if ( HI_TEMP > 35 ) {
+    u8g2.drawStr(x - 2, 16 + y, "HighTemp");
+    y += 7;
+  }
 
   // Draw count
   if (COUNT >= 200) {
@@ -920,6 +926,7 @@ void loop() {
   // Read MCP2515
   if(!digitalRead(CAN0_INT)) {
     CAN0.readMsgBuf(&CAN_RX_ID, &canMsgData.len, CAN_RX_BUF);
+    sort_can();
   }
 
   // needle position calculations for amperage and voltage

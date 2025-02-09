@@ -32,8 +32,9 @@
 //  02/01/25  Removed code repeats in clock statements. Added "hrs" plural condition and associated string, and arithmetic expression for hrs above 120 displayed as days.
 //  03/02/25  Added data structures to allow instant CAN and function variables globally without redeclaration. Also added Macros which are not consuming storage, for easier code writing. Saved 3290 bytes
 //  06/02/25  Forgot to add sort_can() to loop and this added +4,5 kbytes to sketch size :o also added high temp warning in form of warning sign as well as status message and weak cell identifier
+//  08/02/25  Disabled u8g2 features to save memory. shaved off 1420 bytes
 //
-//  Sketch 28084 bytes
+//  Sketch 26864 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -42,9 +43,9 @@
 //  Pushbutton and 10kOhm resistor (pull down)
 
 #include <U8g2lib.h>
-#include <mcp_can.h>
-#include <SPI.h>    // SPI library CANBUS
-#include <Wire.h>   // I2C library OLED
+#include <mcp_can.h>  // CAN library
+#include <SPI.h>      // SPI library CAN shield
+#include <Wire.h>     // I2C library OLED
 
 //  OLED library driver
 U8G2_SH1106_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
@@ -153,10 +154,10 @@ uint8_t c = 180;              // 8 bit unsigned integer range from 0-255 (low - 
 #define CAN_RX_ID   canMsgData.rxId
 #define CAN_RX_BUF  canMsgData.rxBuf
 
-#define CAPACITY    200
+#define BUTTON_PIN  2
+#define CHOICE      1             // SET 1 FOR CABIN OR 3 FOR HELM POSITION
 
 //  Button settings
-const byte buttonPin = 2;         // Pin assigned for button
 uint32_t millis_held = 0;         // 4 byte variable for storing duration button is held down
 uint32_t firstTime = 0;           // 4 byte variable for storing time button is first pushed
 byte previous = HIGH;             // Pin state before pushing or releasing button
@@ -166,9 +167,6 @@ bool buttonState = false;         // Variable for button pushed or not
 static CanMsgData canMsgData;
 static CanData canData;
 static display_data_t displayData;
-
-// Set start page: 1 for cabin and 3 for helm
-byte choice = 1;
 
 // ------------------------ setup ------------------------------
 
@@ -482,16 +480,10 @@ void gauge(uint8_t angle, display_data_t *data) {
   uint8_t m;
   char t[11];
   char c[4] = {"hrs"};
-  // Discharge
-  if (AVG_AMPS > 0) {
-    h = SOC / AVG_AMPS;
-    m = (SOC / AVG_AMPS - h) * 60;
-  }
-  // Charge
-  else {
-    h = (CAPACITY - SOC) / abs(AVG_AMPS);
-    m = ((CAPACITY - SOC) / (abs(AVG_AMPS)) - h) * 60;
-  }
+
+  h = AH / abs(AVG_AMPS);
+  m = AH / (abs(AVG_AMPS)) - h) * 60;
+
   // Adjust x - positon
   if (h > 99 && h <= 120 || h >= 240) { // AND has higher precedence than OR so essentially this is "(h>99 && h<=120) || h>=240"
     u8g2.setCursor(84, 5);
@@ -952,7 +944,7 @@ void loop() {
   }
 
   // Check the status of the button
-  buttonState = digitalRead(buttonPin);
+  buttonState = digitalRead(BUTTON_PIN);
 
   // How long is the button held down
   if (buttonState == HIGH && previous == LOW) {
@@ -985,7 +977,7 @@ void loop() {
           hits += 1;  // adds 1 to hits
         }
         else {
-          hits = choice;
+          hits = CHOICE;
         }
       }
     }

@@ -34,8 +34,9 @@
 //  06/02/25  Forgot to add sort_can() to loop and this added +4,5 kbytes to sketch size :o also added high temp warning in form of warning sign as well as status message and weak cell identifier
 //  08/02/25  Disabled u8g2 features to save memory. shaved off 1420 bytes
 //  10/02/25  Crazy update with unified LUT (look-up table) for angle computation, as this is resource hungry. Also simplified the amperage mapping as standalone function as the resolution computations can look wild
+//  11/02/25  Reverted back to computing needle angle at runtime despite being performance hungry as memory is more critical. At least a common function does it now.
 //
-//  Sketch 26492 bytes
+//  Sketch 26404 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -167,10 +168,6 @@ static CanMsgData canMsgData;
 static CanData canData;
 static display_data_t displayData;
 
-const uint8_t NUM_ANGLES = 181; // 0 to 180 degrees
-uint8_t sinLUT[NUM_ANGLES];
-uint8_t cosLUT[NUM_ANGLES];
-
 // ------------------------ setup ------------------------------
 
 void setup() {
@@ -192,13 +189,6 @@ void setup() {
 
   // Set standard font
   u8g2.setFont(u8g2_font_chikita_tf);
-
-  // Fill the lookup tables
-  for (uint8_t i = 0; i < NUM_ANGLES; i++) {
-    float angleRad = i * PI / 180.0; // Convert degrees to radians
-    sinLUT[i] = (uint8_t)(sin(angleRad) * 255);
-    cosLUT[i] = (uint8_t)(cos(angleRad) * 255);
-  }
 }
 
 // -------------------- set contrast -----------------------------
@@ -254,24 +244,14 @@ void sort_can() {
     WATTS = abs(AVG_AMPS) * VOLT; // absolute amps used for boat
 }
 
-// -------------------- needle angle function -----------------------------------------
+// -------------------- draw needle -----------------------------------------
 
-uint8_t getSin(uint8_t angle) {
-  if (angle <= 90) return sinLUT[angle];
-  if (angle <= 180) return sinLUT[180 - angle];
-  if (angle <= 270) return 255 - sinLUT[angle - 180];
-  return 255 - sinLUT[360 - angle];
-}
+void drawNeedle(uint8_t angle) {
 
-uint8_t getCos(uint8_t angle) {
-  return getSin(angle + 90);
-}
+  float x = sin(2 * angle * 2 * PI / 360);  // Converting DEG to RAD for use with sine and cosine
+  float y = cos(2 * angle * 2 * PI / 360);
 
-void drawNeedle(uint8_t angle, uint8_t centerX, uint8_t centerY, uint8_t radius) {
-  uint8_t idx = angle % 360;
-  int16_t x = centerX + (radius * getSin(idx)) / 255;
-  int16_t y = centerY - (radius * getCos(idx)) / 255;
-  u8g2.drawLine(centerX, centerY, x, y);
+  u8g2.drawLine(X_CTR, Y_CTR, X_CTR + ARC * x, Y_CTR - ARC * y);
 }
 
 // -------------------- mapping function ----------------------------------------------
@@ -290,6 +270,7 @@ int mapAmperage(float amps) {
 
 void amperage(uint8_t angle, display_data_t *data) {
 
+  // Update struct variables
   Y_CTR = 80;
   ARC = 64;
 
@@ -311,8 +292,7 @@ void amperage(uint8_t angle, display_data_t *data) {
   u8g2.drawLine(122, 31, 116, 36);
   
   // Draw the needle and disc
-  drawNeedle(angle, X_CTR, Y_CTR, ARC);
-  //u8g2.drawLine(X_CTR, Y_CTR, X_CTR + ARC * NEEDLE_X, Y_CTR - ARC * NEEDLE_Y);
+  drawNeedle(angle);
   u8g2.drawDisc(X_CTR, Y_MX + 10, 20, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(X_CTR, Y_MX + 10, 20, U8G2_DRAW_UPPER_RIGHT);
 
@@ -375,25 +355,26 @@ void voltage(uint8_t angle, display_data_t *data) {
   u8g2.drawLine(99, 17, 97, 20);
   // Draw far right line
   u8g2.drawLine(122, 31, 116, 36);
-  
-  
+
   // Min shading lines
   u8g2.drawLine(12, 30, 9, 33);
   u8g2.drawLine(13, 30, 10, 33);
   u8g2.drawLine(13, 31, 10, 34);
   u8g2.drawLine(14, 31, 11, 34);
   u8g2.drawLine(14, 32, 11, 35);
+
   // Max shading lines
   u8g2.drawLine(94, 15, 99, 18);
   u8g2.drawLine(94, 16, 98, 18);
   u8g2.drawLine(94, 17, 98, 19);
   u8g2.drawLine(93, 17, 97, 19);
   u8g2.drawLine(93, 18, 98, 20);
-  
+
   // Draw the needle and disc
-  drawNeedle(angle, X_CTR, Y_CTR, ARC); //u8g2.drawLine(X_CTR, Y_CTR, X_CTR + ARC * NEEDLE_X, Y_CTR - ARC * NEEDLE_Y);
+  drawNeedle(angle);
   u8g2.drawDisc(X_CTR, Y_MX + 10, 20, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(X_CTR, Y_MX + 10, 20, U8G2_DRAW_UPPER_RIGHT);
+
   // Draw scale labels
   u8g2.drawStr(0, 29, "44"); 
   u8g2.drawStr(24, 11, "49");                  
@@ -413,7 +394,7 @@ void gauge(uint8_t angle, display_data_t *data) {
   // Map watt readings 0-10000 to between 0-90
   mappedValue = map(WATTS, 0, 10000, 0, 90);
 
-  // Display dimensions
+  // Update struct variables
   Y_CTR = Y_MX / 2 + 10;
   ARC = Y_MX / 2;
 
@@ -423,8 +404,8 @@ void gauge(uint8_t angle, display_data_t *data) {
   u8g2.drawCircle(X_CTR, Y_CTR, ARC + 6, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawCircle(X_CTR, Y_CTR, ARC + 4, U8G2_DRAW_UPPER_LEFT);
 
-  // Draw the needle
-  drawNeedle(angle, X_CTR, Y_CTR, ARC); //u8g2.drawLine(X_CTR, Y_CTR, X_CTR + ARC * NEEDLE_X, Y_CTR - ARC * NEEDLE_Y);
+  // Draw the needle and disc
+  drawNeedle(angle);
   u8g2.drawDisc(X_CTR, Y_CTR, 5, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(X_CTR, Y_CTR, 5, U8G2_DRAW_UPPER_RIGHT);
  
@@ -561,7 +542,6 @@ void bars(display_data_t *data) {
   }
   
   // Draw health bar
-  
   int hBar = HEALTH * 0.34;
   if (HEALTH >= 0 && HEALTH <= 9) {
     u8g2.setCursor(88, 5);  // Shift position at and above 0%
@@ -578,7 +558,6 @@ void bars(display_data_t *data) {
   }
   
   // Draw ampere bar
-
   float aBar = abs(AMPS) * 0.137;
 
   // DISCHARGE CURSOR POSITION ADJUSTMENTS

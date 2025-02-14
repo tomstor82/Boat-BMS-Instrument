@@ -49,6 +49,42 @@
 #include <SPI.h>      // SPI library CAN shield
 #include <Wire.h>     // I2C library OLED
 
+// Short-hand macros cost free
+#define VOLT        canData.instU
+#define AMPS        canData.instI
+#define AVG_AMPS    canData.avgI
+#define WATTS       canData.p
+#define SOC         canData.soc
+#define AH          canData.ah
+#define RELAYS      canData.ry
+#define CCL         canData.cc
+#define DCL         canData.dcl
+#define CYCLES      canData.cc
+#define COUNT       canData.ct
+#define FAULTS      canData.fu
+#define STATUS      canData.st
+#define HI_TEMP     canData.hT
+#define LO_TEMP     canData.lT
+#define HI_CELL_V   canData.hC
+#define LO_CELL_V   canData.lC
+#define HI_CELL_ID  canData.hCid
+#define LO_CELL_ID  canData.lCid
+#define HEALTH      canData.h
+#define HEAT_SINK   canData.hs
+#define CAPACITY    200
+
+#define X_CTR       displayData.xcenter
+#define Y_CTR       displayData.ycenter
+#define X_MX        displayData.xmax
+#define Y_MX        displayData.ymax
+#define RADIUS      displayData.radius
+
+#define CAN_RX_ID   canMsgData.rxId
+#define CAN_RX_BUF  canMsgData.rxBuf
+
+#define BUTTON_PIN  2
+#define CHOICE      1             // SET 1 FOR CABIN OR 3 FOR HELM POSITION
+
 //  OLED library driver
 U8G2_SH1106_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
@@ -81,8 +117,6 @@ struct CanData {
   float ah = 0;               // Amp hours
   float hC = 0;               // High Cell Voltage in 0,0001V
   float lC = 0;               // Low Cell Voltage in 0,0001V
-  //float minC = 0;             // Minimum Allowed cell voltage
-  //float maxC = 0;             // Maximum Allowed cell voltage
 
   byte soc = 0;               // State of charge - multiplied by 2
   byte hT = 0;                // Highest cell temperature
@@ -100,62 +134,24 @@ struct CanData {
   byte ct = 0;                // Counter
 
   byte hs = 0;                // Internal Heatsink
-  //byte cu = 0;                // BMS custom flag NOT IN USE
 };
 
 typedef struct {
-  byte xmax = 128;
-  byte ymax = 64;
+  byte xmax = 128;              // display width
+  byte ymax = 64;               // display height
   byte xcenter = xmax/2;
   byte ycenter = 0;  
-  byte arc = 0;
+  byte radius = 0;
   uint32_t wrench = 0;          // Wrench icon variable
-  float x = 0;
-  float y = 0;
 } display_data_t;
 
 //  Variables
-int mappedValue = 10;                   // Mapped values to fit needle
-u8g2_uint_t needleAngle = 0;           // 8 bit unsigned int amperage and voltage needle angle
-u8g2_uint_t wattNeedleAngle = 0;           // 8 bit unsigned int watt needle angle
-uint8_t c = 180;              // 8 bit unsigned integer range from 0-255 (low - high contrast)
-
-// Short-hand macros cost free
-#define VOLT        canData.instU
-#define AMPS        canData.instI
-#define AVG_AMPS    canData.avgI
-#define WATTS       canData.p
-#define SOC         canData.soc
-#define AH          canData.ah
-#define RELAYS      canData.ry
-#define CCL         canData.cc
-#define DCL         canData.dcl
-#define CYCLES      canData.cc
-#define COUNT       canData.ct
-#define FAULTS      canData.fu
-#define STATUS      canData.st
-#define HI_TEMP     canData.hT
-#define LO_TEMP     canData.lT
-#define HI_CELL_V   canData.hC
-#define LO_CELL_V   canData.lC
-#define HI_CELL_ID  canData.hCid
-#define LO_CELL_ID  canData.lCid
-#define HEALTH      canData.h
-#define HEAT_SINK   canData.hs
-
-#define X_CTR       displayData.xcenter
-#define Y_CTR       displayData.ycenter
-#define X_MX        displayData.xmax
-#define Y_MX        displayData.ymax
-#define ARC         displayData.arc
-#define X           displayData.x
-#define Y           displayData.y
-
-#define CAN_RX_ID   canMsgData.rxId
-#define CAN_RX_BUF  canMsgData.rxBuf
-
-#define BUTTON_PIN  2
-#define CHOICE      1             // SET 1 FOR CABIN OR 3 FOR HELM POSITION
+//uint8_t mappedWatts = 0;              // 8 bit unsigned int mapped values to fit needles
+//uint8_t mappedVoltage = 0;
+//uint8_t mappedAmps = 0;
+//u8g2_uint_t needleAngle = 0;          // 8 bit unsigned int amperage and voltage needle angle
+//u8g2_uint_t wattNeedleAngle = 0;      // 8 bit unsigned int watt needle angle
+uint8_t c = 180;                      // 8 bit unsigned integer range from 0-255 (low - high contrast)
 
 //  Button settings
 uint32_t millis_held = 0;         // 4 byte variable for storing duration button is held down
@@ -167,6 +163,11 @@ bool buttonState = false;         // Variable for button pushed or not
 static CanMsgData canMsgData;
 static CanData canData;
 static display_data_t displayData;
+
+const uint8_t NUM_ANGLES = 46; // 0 to 45 degrees
+float sinLUT[NUM_ANGLES];
+float cosLUT[NUM_ANGLES];
+
 
 // ------------------------ setup ------------------------------
 
@@ -189,6 +190,16 @@ void setup() {
 
   // Set standard font
   u8g2.setFont(u8g2_font_chikita_tf);
+
+  // Fill the lookup tables
+  for (int i = 0; i < NUM_ANGLES; i++) {
+    float angleRad = i * PI / 180.0; // Convert degrees to radians
+    sinLUT[i] = sin(angleRad);
+    cosLUT[i] = cos(angleRad);
+  }
+
+
+
 }
 
 // -------------------- set contrast -----------------------------
@@ -243,15 +254,55 @@ void sort_can() {
     }
     WATTS = abs(AVG_AMPS) * VOLT; // absolute amps used for boat
 }
+//-------------------------------------------------------------------------------------
+float getSin(int angle) {
+  angle = angle % 360; // Normalize angle to 0–359 degrees
+  if (angle < 0) angle += 360; // Handle negative angles
 
-// -------------------- draw needle -----------------------------------------
+  if (angle <= 45) {
+    return sinLUT[angle];
+  } else if (angle <= 135) {
+    return sinLUT[90 - angle];
+  } else if (angle <= 180) {
+    return sinLUT[angle - 135];
+  } else if (angle <= 225) {
+    return -sinLUT[225 - angle];
+  } else if (angle <= 315) {
+    return -sinLUT[angle - 225];
+  } else {
+    return -sinLUT[360 - angle];
+  }
+}
+
+float getCos(int angle) {
+  angle = angle % 360; // Normalize angle to 0–359 degrees
+  if (angle < 0) angle += 360; // Handle negative angles
+
+  if (angle <= 45) {
+    return cosLUT[angle];
+  } else if (angle <= 135) {
+    return -cosLUT[90 - angle];
+  } else if (angle <= 180) {
+    return -cosLUT[angle - 135];
+  } else if (angle <= 225) {
+    return -cosLUT[225 - angle];
+  } else if (angle <= 315) {
+    return cosLUT[angle - 225];
+  } else {
+    return cosLUT[360 - angle];
+  }
+}
+
+// -------------------- draw needle ---------------------------------------------------
 
 void drawNeedle(uint8_t angle) {
 
-  float x = sin(2 * angle * 2 * PI / 360);  // Converting DEG to RAD for use with sine and cosine
-  float y = cos(2 * angle * 2 * PI / 360);
+  // Compute lengths of triangle sides which equates to x and y positions of pointer
+  float x = X_CTR + RADIUS * getSin(2 * angle);
+  float y = Y_CTR + RADIUS * getCos(2 * angle);
 
-  u8g2.drawLine(X_CTR, Y_CTR, X_CTR + ARC * x, Y_CTR - ARC * y);
+  // Draw the beautiful moving needle
+  u8g2.drawLine(X_CTR, Y_CTR, x, y);
 }
 
 // -------------------- mapping function ----------------------------------------------
@@ -266,20 +317,34 @@ int mapAmperage(float amps) {
   return map(amps, -5, 5, 50, 0);
 }
 
+// -------------------- Angle thingy moved from loop ----------------------------------
+
+uint8_t setNeedleAngle(uint8_t needleAngle) {
+  // 155 = zero position, 180 = just before middle, 0 = middle, 25 = max
+  // position correction
+  if (needleAngle < 25){
+    needleAngle += 155;
+  }
+  else {
+    needleAngle -= 25;
+  }
+  return needleAngle;
+}
+
 // -------------------- amperage display * 2 bytes from rxBuf -------------------------
 
-void amperage(uint8_t angle, display_data_t *data) {
+void amperage(display_data_t *data) {
 
   // Update struct variables
   Y_CTR = 80;
-  ARC = 64;
+  RADIUS = 64;
 
   // Map various amp readings to between 0-50. 0 = discharge 50 = charge
-  mappedValue = mapAmperage(AMPS);
+  uint8_t mappedAmps = mapAmperage(AMPS);
 
   // Draw arc and scale lines
-  u8g2.drawCircle(X_CTR, Y_CTR + 4, ARC + 8);
-  u8g2.drawCircle(X_CTR, Y_CTR + 4, ARC + 12);
+  u8g2.drawCircle(X_CTR, Y_CTR + 4, RADIUS + 8);
+  u8g2.drawCircle(X_CTR, Y_CTR + 4, RADIUS + 12);
   // Draw far left line
   u8g2.drawLine(6, 31, 12, 36);
   // Draw quarter left line
@@ -292,7 +357,7 @@ void amperage(uint8_t angle, display_data_t *data) {
   u8g2.drawLine(122, 31, 116, 36);
   
   // Draw the needle and disc
-  drawNeedle(angle);
+  drawNeedle(setNeedleAngle(mappedAmps));
   u8g2.drawDisc(X_CTR, Y_MX + 10, 20, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(X_CTR, Y_MX + 10, 20, U8G2_DRAW_UPPER_RIGHT);
 
@@ -333,14 +398,14 @@ void amperage(uint8_t angle, display_data_t *data) {
 
 // --------------------- volt display * 2 bytes from rxBuf-----------------------
 
-void voltage(uint8_t angle, display_data_t *data) {
-
+void voltage(display_data_t *data) {
+  
   // Map voltage from 44,0V - 64,0V between 0 - 50
-  mappedValue = map(VOLT, 44.0, 64.0, 0, 50);
+  static const uint8_t mappedVoltage = map(VOLT, 44.0, 64.0, 0, 50);
 
   // Draw arc and scale lines
-  u8g2.drawCircle(X_CTR, Y_CTR + 4, ARC + 8);
-  u8g2.drawCircle(X_CTR, Y_CTR + 4, ARC + 12);
+  u8g2.drawCircle(X_CTR, Y_CTR + 4, RADIUS + 8);
+  u8g2.drawCircle(X_CTR, Y_CTR + 4, RADIUS + 12);
   // Draw far left line
   u8g2.drawLine(6, 31, 12, 36);
   // Draw left line
@@ -371,7 +436,7 @@ void voltage(uint8_t angle, display_data_t *data) {
   u8g2.drawLine(93, 18, 98, 20);
 
   // Draw the needle and disc
-  drawNeedle(angle);
+  drawNeedle(setNeedleAngle(mappedVoltage));
   u8g2.drawDisc(X_CTR, Y_MX + 10, 20, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(X_CTR, Y_MX + 10, 20, U8G2_DRAW_UPPER_RIGHT);
 
@@ -389,23 +454,34 @@ void voltage(uint8_t angle, display_data_t *data) {
 
 // --------------------- gauge display * 11 bytes from rxBuf ----------------------
 
-void gauge(uint8_t angle, display_data_t *data) {
+void gauge(display_data_t *data) {
 
-  // Map watt readings 0-10000 to between 0-90
-  mappedValue = map(WATTS, 0, 10000, 0, 90);
+  static const uint8_t mappedWatts = map(WATTS, 0, 10000, 0, 90);
+
+  // needle position calculations watt gauge 90 positions
+  // 135 = zero position, 180 = just before middle, 0 = middle, 45 = max
+  uint8_t wattNeedleAngle = mappedWatts; // sets the angle mapped to current watt reading
+
+  // position correction - makes sure less than 45 is left of top and over 45 right of top
+  if (wattNeedleAngle < 45){
+    wattNeedleAngle += 135;
+  }
+  else {
+    wattNeedleAngle -= 45;
+  }
 
   // Update struct variables
   Y_CTR = Y_MX / 2 + 10;
-  ARC = Y_MX / 2;
+  RADIUS = Y_MX / 2;
 
   // Draw border of the gauge
-  u8g2.drawCircle(X_CTR, Y_CTR, ARC + 6, U8G2_DRAW_UPPER_RIGHT);
-  u8g2.drawCircle(X_CTR, Y_CTR, ARC + 4, U8G2_DRAW_UPPER_RIGHT);
-  u8g2.drawCircle(X_CTR, Y_CTR, ARC + 6, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawCircle(X_CTR, Y_CTR, ARC + 4, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawCircle(X_CTR, Y_CTR, RADIUS + 6, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawCircle(X_CTR, Y_CTR, RADIUS + 4, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawCircle(X_CTR, Y_CTR, RADIUS + 6, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawCircle(X_CTR, Y_CTR, RADIUS + 4, U8G2_DRAW_UPPER_LEFT);
 
   // Draw the needle and disc
-  drawNeedle(angle);
+  drawNeedle(wattNeedleAngle);
   u8g2.drawDisc(X_CTR, Y_CTR, 5, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(X_CTR, Y_CTR, 5, U8G2_DRAW_UPPER_RIGHT);
  
@@ -481,8 +557,8 @@ void gauge(uint8_t angle, display_data_t *data) {
   char t[11];
   char c[4] = {"hrs"};
 
-  h = AH / abs(AVG_AMPS);
-  m = AH / (abs(AVG_AMPS) - h) * 60;
+  h = CAPACITY * SOC / 100 / abs(AVG_AMPS);
+  m = CAPACITY * SOC / 100 / (abs(AVG_AMPS) - h) * 60;
 
   // Adjust x - positon
   if (h > 99 && h <= 120 || h >= 240) { // AND has higher precedence than OR so essentially this is "(h>99 && h<=120) || h>=240"
@@ -707,6 +783,11 @@ void text(display_data_t *data) {
   uint8_t y = 0;          // variable y position for flags
   u8g2.drawStr(69, 5, "Flags");
 
+  // Flag No BMS CAN RX
+  if (canMsgData.len == 0) {
+    u8g2.drawStr(x - 2, 16 + y, "noCANrx");
+    y += 7;
+  }
   // Flag internal communication fault
   if (((FAULTS & 0x0100) == 0x0100) && y <= 28) {
     u8g2.drawStr(x, 16 + y, "intCom");
@@ -721,7 +802,12 @@ void text(display_data_t *data) {
   if (((FAULTS & 0x0400) == 0x0400) && y <= 28) {
     // Create buffer to add weak cell id to string
     char buf[7];
-    snprintf(buf, sizeof(buf), "#%dweak", LO_CELL_ID);
+    if ( AVG_AMPS < 0 ) {
+      snprintf(buf, sizeof(buf), "#%dweak", HI_CELL_ID);
+    }
+    else {
+      snprintf(buf, sizeof(buf), "#%dweak", LO_CELL_ID);
+    }
     u8g2.drawStr(x, 16 + y, buf);
     y += 7;
   }
@@ -916,30 +1002,35 @@ void loop() {
   // Read MCP2515
   if(!digitalRead(CAN0_INT)) {
     CAN0.readMsgBuf(&CAN_RX_ID, &canMsgData.len, CAN_RX_BUF);
-    sort_can();
+    if (canMsgData.len > 0 && canMsgData.len <= sizeof(CAN_RX_BUF)) {
+      sort_can();
+    }
+    else {
+      canData = {};
+    }
   }
 
-  // needle position calculations for amperage and voltage
+  // needle position calculations for amperage and voltage 50 positions
   // 155 = zero position, 180 = just before middle, 0 = middle, 25 = max
-  needleAngle = mappedValue;
+  /*needleAngle = mappedVoltAmps;
   // position correction
   if (needleAngle < 25){
     needleAngle += 155;
   }
   else {
     needleAngle -= 25;
-  }
+  }*/
   
-  // needle position calculations watt gauge
+  // needle position calculations watt gauge 90 positions
   // 135 = zero position, 180 = just before middle, 0 = middle, 45 = max
-  wattNeedleAngle = mappedValue;
+  /*wattNeedleAngle = mappedValue;
   // position correction
   if (wattNeedleAngle < 45){
     wattNeedleAngle += 135;
   }
   else {
     wattNeedleAngle -= 45;
-  }
+  }*/
 
   // Check the status of the button
   buttonState = digitalRead(BUTTON_PIN);
@@ -987,7 +1078,7 @@ void loop() {
   if (hits == 1) {
     u8g2.firstPage(); 
     do {             
-      voltage(needleAngle, &displayData);
+      voltage(&displayData);
     }
     while(u8g2.nextPage());
   }
@@ -996,7 +1087,7 @@ void loop() {
   else if (hits == 2) {
     u8g2.firstPage(); 
     do {             
-      amperage(needleAngle, &displayData);
+      amperage(&displayData);
     }
     while(u8g2.nextPage());
   }
@@ -1005,7 +1096,7 @@ void loop() {
   else if (hits == 3) {
     u8g2.firstPage(); 
     do {             
-      gauge(wattNeedleAngle, &displayData);
+      gauge(&displayData);
     }
     while(u8g2.nextPage());
   }
@@ -1027,5 +1118,31 @@ void loop() {
     }
     while(u8g2.nextPage());
   }
-  
+  //**************************************
+  if (Serial) {
+    // Average loop lap time of 256 iterations - reflects the lvgl delay at end of loop
+    static uint8_t i = 0;
+    static uint32_t start_time = millis();
+    static bool finished = false;
+
+    // start iterations
+    if ( i <  255 && ! finished ) {
+      i++;
+    }
+    // calculate and write result
+    else if ( ! finished ) {
+      uint8_t avg_lap = (millis() - start_time) / 256;
+      char buf[30];
+      snprintf(buf, sizeof(buf), "%d ms average loop lap", avg_lap);
+      Serial.println(buf);
+      finished = true;
+    }
+    // start again at 30s intervals
+    else if ( finished && (start_time + 30000) < millis() ) {
+      i = 0;
+      start_time = millis();
+      finished = false;
+    }
+  }
+  //**************************************
 }

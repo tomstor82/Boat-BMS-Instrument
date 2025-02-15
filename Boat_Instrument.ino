@@ -557,9 +557,17 @@ void gauge(display_data_t *data) {
   char t[11];
   char c[4] = {"hrs"};
 
-  h = CAPACITY * SOC / 100 / abs(AVG_AMPS);
-  m = CAPACITY * SOC / 100 / (abs(AVG_AMPS) - h) * 60;
-
+  // Discharge
+  if ( AVG_AMPS > 0 ) {
+    h = AH / AVG_AMPS;
+    m = ( AH / AVG_AMPS - h ) * 60;
+  }
+  // Charge
+  else {
+    h = (CAPACITY * SOC / 100) / abs(AVG_AMPS);
+    m = ((CAPACITY * SOC / 100) / (abs(AVG_AMPS)) - h) * 60;
+  }
+  
   // Adjust x - positon
   if (h > 99 && h <= 120 || h >= 240) { // AND has higher precedence than OR so essentially this is "(h>99 && h<=120) || h>=240"
     u8g2.setCursor(84, 5);

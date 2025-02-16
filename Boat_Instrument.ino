@@ -564,8 +564,8 @@ void gauge(display_data_t *data) {
   }
   // Charge
   else {
-    h = (CAPACITY * SOC / 100) / abs(AVG_AMPS);
-    m = ((CAPACITY * SOC / 100) / (abs(AVG_AMPS)) - h) * 60;
+   h = (CAPACITY - AH) / abs(AVG_AMPS);
+    m = ((CAPACITY - AH) / abs(AVG_AMPS) - h) * 60;
   }
   
   // Adjust x - positon

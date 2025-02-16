@@ -1146,7 +1146,7 @@ void loop() {
       finished = true;
     }
     // start again at 30s intervals
-    else if ( finished && (start_time + 30000) < millis() ) {
+    else if ( finished && (millis() - start_time) > 30000 ) {
       i = 0;
       start_time = millis();
       finished = false;

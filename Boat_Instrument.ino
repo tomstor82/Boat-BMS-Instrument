@@ -30,9 +30,9 @@
 //  29/09/19  Added button press to change contrast level. ** Replaced "if" in void loop button pressing for "else if & else" same with "hits". Saves 20 bytes.
 //  01/10/19  Changed abbreviatons on BMS status messages to easier understand their meaning.
 //  02/01/25  Removed code repeats in clock statements. Added "hrs" plural condition and associated string, and arithmetic expression for hrs above 120 displayed as days.
-//  10/03/25  Added low or high cell id for weak cell. Added macros for constants. Improved dcl and ccl x_pos condition statements
+//  10/03/25  Added low or high cell id for weak cell. Added macros for constants and ah now used for clock computations. Improved dcl and ccl x_pos condition statements
 //
-//  Sketch 25574
+//  Sketch 25574 (25894 serial and loop time tester)
 //
 //  HARDWARE:
 //  Arduino Uno clone

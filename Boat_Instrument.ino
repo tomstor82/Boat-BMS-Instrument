@@ -30,9 +30,9 @@
 //  29/09/19  Added button press to change contrast level. ** Replaced "if" in void loop button pressing for "else if & else" same with "hits". Saves 20 bytes.
 //  01/10/19  Changed abbreviatons on BMS status messages to easier understand their meaning.
 //  02/01/25  Removed code repeats in clock statements. Added "hrs" plural condition and associated string, and arithmetic expression for hrs above 120 displayed as days.
-//  10/03/25  Added low or high cell id for weak cell. Added macros for constants and ah now used for clock computations. Improved dcl and ccl x_pos condition statements
+//  10/03/25  Added low or high cell id for weak cell. Added macros for constants and ah now used for clock computations. Improved dcl and ccl x_pos condition statements. Changed some local data types to save memory and set 0 on initiation.
 //
-//  Sketch 25574 (25894 serial and loop time tester)
+//  Sketch 25510 (25820 serial and loop time tester)
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -90,8 +90,8 @@ byte hits = 0;                        // Variable for how many times button has 
 // ------------------------ setup ------------------------------
 
 void setup() {
-  // Start serial monitor communication
 
+  // Start serial monitor communication
   Serial.begin(115200);
 
   // Initialise MCP2515 running at 8MHz and baudrate 250kb/s
@@ -111,7 +111,8 @@ void setup() {
 // -------------------- set contrast -----------------------------
 
 void contrast(uint8_t c) {
-  
+
+  // Set contrast
   u8g2.setContrast(c);
 }
 
@@ -142,11 +143,11 @@ void amperage(uint8_t angle) {
   }
 
   // Display dimensions
-  int xmax = 128;
-  int ymax = 64;
-  int xcenter = xmax/2;
-  int ycenter = 80;
-  int arc = 64;
+  byte xmax = 128;
+  byte ymax = 64;
+  byte xcenter = xmax/2;
+  byte ycenter = 80;
+  byte arc = 64;
 
   // Draw arc and scale lines
   u8g2.drawCircle(xcenter, ycenter+4, arc+8);
@@ -216,11 +217,11 @@ void voltage(uint8_t angle) {
   mapped_angle = map(rawU, 440,640,0,50);
 
   // Display dimensions
-  int xmax = 128;
-  int ymax = 64;
-  int xcenter = xmax/2;
-  int ycenter = 80;
-  int arc = 64;
+  byte xmax = 128;
+  byte ymax = 64;
+  byte xcenter = xmax/2;
+  byte ycenter = 80;
+  byte arc = 64;
 
   // Draw arc and scale lines
   u8g2.drawCircle(xcenter, ycenter+4, arc+8);
@@ -271,14 +272,14 @@ void voltage(uint8_t angle) {
 
 }
 
-// --------------------- gauge display * 11 bytes from rxBuf ----------------------
+// --------------------- gauge display * 13 bytes from rxBuf ----------------------
 
 void gauge(uint8_t angle) {
 
-  int fs;           // Fault messages & status from CANBus for displaying wrench icon
-  byte ry;          // Relay status for determining when to show lightening bolt and sun icon respectively
-  int avgI;         // Average current for clock and sun symbol calculations
-  uint16_t ah;      // Ah for clock computations
+  uint16_t fs = 0;          // Fault messages & status from CANBus for displaying wrench icon
+  byte ry = 0;              // Relay status for determining when to show lightening bolt and sun icon respectively
+  int16_t avgI = 0;         // Average current for clock and sun symbol calculations
+  uint16_t ah = 0;          // Ah for clock computations
 
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
@@ -302,11 +303,11 @@ void gauge(uint8_t angle) {
   p = (abs(rawI)/10.0)*rawU/10.0;
 
   // Display dimensions
-  int xmax = 128;
-  int ymax = 64;
-  int xcenter = xmax/2;
-  int ycenter = ymax/2+10;
-  int arc = ymax/2;
+  byte xmax = 128;
+  byte ymax = 64;
+  byte xcenter = xmax/2;
+  byte ycenter = ymax/2+10;
+  byte arc = ymax/2;
 
   // Draw border of the gauge
   u8g2.drawCircle(xcenter, ycenter, arc+6, U8G2_DRAW_UPPER_RIGHT);
@@ -387,9 +388,9 @@ void gauge(uint8_t angle) {
   u8g2.print(soc/2); u8g2.print('%');
   
   // Draw clock
-  uint16_t h;
-  uint8_t m;
-  char t[11];
+  uint16_t h = 0;
+  uint8_t m = 0;
+  char t[11] = "";
   char c[4] = {"hrs"};
   // Discharge
   if (avgI > 0) {
@@ -425,14 +426,14 @@ void gauge(uint8_t angle) {
   u8g2.print(t);
 }
  
-// ------------------------ bars gauge * 7 bytes from rxBuf ------------------------
+// ------------------------ bars gauge * 9 bytes from rxBuf ------------------------
 
 void bars() {
 
   // Variables from CANBus
-  int hC;        // High Cell Voltage in 0,0001V
-  int lC;        // Low Cell Voltage in 0,0001V
-  int h;         // Health
+  uint16_t hC = 0;        // High Cell Voltage in 0,0001V
+  uint16_t lC = 0;        // Low Cell Voltage in 0,0001V
+  byte h = 0;             // Health
 
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
@@ -536,23 +537,23 @@ void bars() {
     u8g2.drawBox(113, 10, 7, 34);
   }
 }
-// ------------------------ text display * 13 bytes from rxBuf ---------------------
+// ------------------------ text display * 18 bytes from rxBuf ---------------------
 
 void text() {
 
   // Variables from CANBus
-  uint16_t fu;            // BMS faults
-  byte hT;                // Highest cell temperature *was int
-  byte lT;                // Lowest cell temperature * was int
-  uint16_t ah;            // Amp hours
-  byte ry;                // Relay status
-  byte dcl;               // Discharge current limit * was unsigned int
-  byte ccl;               // Charge current limit * was unsigned int
-  byte ct;                // Counter to observe data received
-  byte st;                // BMS Status
-  uint16_t cc;            // Total pack cycles
-  byte hCid;              // High Cell ID
-  byte lCid;              // Low Cell ID
+  uint16_t fu = 0;            // BMS faults
+  byte hT = 0;                // Highest cell temperature *was int
+  byte lT = 0;                // Lowest cell temperature * was int
+  uint16_t ah = 0;            // Amp hours
+  byte ry = 0;                // Relay status
+  byte dcl = 0;               // Discharge current limit * was unsigned int
+  byte ccl = 0;               // Charge current limit * was unsigned int
+  byte ct = 0;                // Counter to observe data received
+  byte st = 0;                // BMS Status
+  uint16_t cc = 0;            // Total pack cycles
+  byte hCid = 0;              // High Cell ID
+  byte lCid = 0;              // Low Cell ID
 
   // Sort CANBus data buffer
   if (rxId == 0x0A9) {
@@ -576,7 +577,6 @@ void text() {
   if (rxId == 0x0BE ) {
     hCid = rxBuf[0];
     hCid = rxBuf[1];
-    //ct = rxBuf[4];
   }
 
   // Draw horisontal lines

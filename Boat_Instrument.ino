@@ -92,7 +92,7 @@ byte hits = 0;                        // Variable for how many times button has 
 void setup() {
 
   // Start serial monitor communication
-  Serial.begin(115200);
+  //Serial.begin(115200);
 
   // Initialise MCP2515 running at 8MHz and baudrate 250kb/s
   CAN0.begin(MCP_ANY, CAN_250KBPS, MCP_8MHZ);
@@ -276,10 +276,10 @@ void voltage(uint8_t angle) {
 
 void gauge(uint8_t angle) {
 
-  uint16_t fs = 0;          // Fault messages & status from CANBus for displaying wrench icon
-  byte ry = 0;              // Relay status for determining when to show lightening bolt and sun icon respectively
-  int16_t avgI = 0;         // Average current for clock and sun symbol calculations
-  uint16_t ah = 0;          // Ah for clock computations
+  uint16_t fs;          // Fault messages & status from CANBus for displaying wrench icon
+  byte ry;              // Relay status for determining when to show lightening bolt and sun icon respectively
+  int16_t avgI;         // Average current for clock and sun symbol calculations
+  uint16_t ah;          // Ah for clock computations
 
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
@@ -388,8 +388,8 @@ void gauge(uint8_t angle) {
   u8g2.print(soc/2); u8g2.print('%');
   
   // Draw clock
-  uint16_t h = 0;
-  uint8_t m = 0;
+  uint16_t h;
+  uint8_t m;
   char t[11] = "";
   char c[4] = {"hrs"};
   // Discharge
@@ -431,9 +431,9 @@ void gauge(uint8_t angle) {
 void bars() {
 
   // Variables from CANBus
-  uint16_t hC = 0;        // High Cell Voltage in 0,0001V
-  uint16_t lC = 0;        // Low Cell Voltage in 0,0001V
-  byte h = 0;             // Health
+  uint16_t hC;        // High Cell Voltage in 0,0001V
+  uint16_t lC;        // Low Cell Voltage in 0,0001V
+  byte h;             // Health
 
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
@@ -542,18 +542,18 @@ void bars() {
 void text() {
 
   // Variables from CANBus
-  uint16_t fu = 0;            // BMS faults
-  byte hT = 0;                // Highest cell temperature *was int
-  byte lT = 0;                // Lowest cell temperature * was int
-  uint16_t ah = 0;            // Amp hours
-  byte ry = 0;                // Relay status
-  byte dcl = 0;               // Discharge current limit * was unsigned int
-  byte ccl = 0;               // Charge current limit * was unsigned int
-  byte ct = 0;                // Counter to observe data received
-  byte st = 0;                // BMS Status
-  uint16_t cc = 0;            // Total pack cycles
-  byte hCid = 0;              // High Cell ID
-  byte lCid = 0;              // Low Cell ID
+  uint16_t fu;            // BMS faults
+  byte hT;                // Highest cell temperature *was int
+  byte lT;                // Lowest cell temperature * was int
+  uint16_t ah;            // Amp hours
+  byte ry;                // Relay status
+  byte dcl;               // Discharge current limit * was unsigned int
+  byte ccl;               // Charge current limit * was unsigned int
+  byte ct;                // Counter to observe data received
+  byte st;                // BMS Status
+  uint16_t cc;            // Total pack cycles
+  byte hCid;              // High Cell ID
+  byte lCid;              // Low Cell ID
 
   // Sort CANBus data buffer
   if (rxId == 0x0A9) {
@@ -989,7 +989,7 @@ void loop() {
     while(u8g2.nextPage());
   }
   //**************************************
-  if (Serial) {
+  /*if (Serial) {
     // Average loop lap time of 256 iterations - reflects the lvgl delay at end of loop
     static uint8_t i = 0;
     static uint32_t start_time = millis();
@@ -1013,6 +1013,6 @@ void loop() {
       start_time = millis();
       finished = false;
     }
-  }
+  }*/
   //**************************************
 }

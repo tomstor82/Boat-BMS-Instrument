@@ -699,10 +699,10 @@ void text() {
     // Create buffer to add weak cell id to string
     char buf[7];
     if ( rawI < 0 ) {
-      snprintf(buf, sizeof(buf), "%d wk", hCid);
+      snprintf(buf, sizeof(buf), "%2d wk", hCid);
     }
     else {
-      snprintf(buf, sizeof(buf), "%d wk", lCid);
+      snprintf(buf, sizeof(buf), "%2d wk", lCid);
     }
     u8g2.drawStr(x, 16 + y, buf);
     y += 7;

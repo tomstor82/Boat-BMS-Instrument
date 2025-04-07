@@ -355,22 +355,32 @@ void gauge(uint8_t angle) {
     u8g2.setCursor(29,60);
   }
   u8g2.print(p);
-  
-  // Draw lightening bolt when charge current above 20A and charge safety relay is closed
-  if (rawI < -200 && (ry & 0b00000100) == 0b00000100) {
-    u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
-    u8g2.drawGlyph(4, 40, 67);
-  }
-  // Draw sun when charge current is above 0A and charge relay is closed and charge safety relay is open or above 30A charge and charge safety relay closed
-  if (avgI < 0 && (ry & 0b00000010) == 0b00000010 && (ry & 0b00000100) != 0b00000100 || avgI < -300 && (ry & 0b00000010) == 0b00000010 && (ry & 0b00000100) == 0b00000100) {
+
+  // If charge current is above 30A with charge relay active, show sun to indicate solar is also contributing
+  if ( avgI < -300 && (ry & 0x02) == 0x02 ) {
     u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
     u8g2.drawGlyph(4, 39, 69);
   }
-  // Draw warning symbol at and below 20% State of Charge if charge safety relay is open
-  if (soc <= 40 && (ry & 0b00000100) != 0b00000100) {   // soc from canbus is multiplied by 2
+  // If charge show either sun or lightening bolt depending on which relay is active
+  else if ( avgI < 0 ) {
+    // DRAW LIGHTENING BOLT IF CHARGER SAFETY RELAY ACTIVE
+    if ( (ry & 0x04) == 0x04 ) {
+      u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
+      u8g2.drawGlyph(4, 40, 67);
+    }
+    // DRAW SUN IF CHARGE RELAY ACTIVE
+    else if ( (ry & 0x02) == 0x02 ) {
+      u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
+      u8g2.drawGlyph(4, 39, 69);
+    }
+  }
+
+  // Draw warning symbol at and below 20% State of Charge if discharging
+  else if ( soc <= 40 && avgI > 0 ) {   // soc from canbus is multiplied by 2
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 39, 71);
   }
+
   // Draw wrench icon if BMS flags have not been seen
   if (fs != wrench) {
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
@@ -596,7 +606,7 @@ void text() {
   u8g2.drawStr(0, 5, "Relay Status");
   u8g2.drawStr(0, 16, "Discharge");
   u8g2.setFont(u8g2_font_open_iconic_check_1x_t);
-  if ((ry & 0b00000001) == 0b00000001) {
+  if ((ry & 0x01) == 0x01) {
     u8g2.drawGlyph(52, 18, 64);
   }
   else {
@@ -605,7 +615,7 @@ void text() {
   u8g2.setFont(u8g2_font_chikita_tf);
   u8g2.drawStr(0, 25, "Charge");
   u8g2.setFont(u8g2_font_open_iconic_check_1x_t);
-  if ((ry & 0b00000010) == 0b00000010) {
+  if ((ry & 0x02) == 0x02) {
     u8g2.drawGlyph(52, 27, 64);
   }
   else {
@@ -614,7 +624,7 @@ void text() {
   u8g2.setFont(u8g2_font_chikita_tf);
   u8g2.drawStr(0, 34, "Chg Safety");
   u8g2.setFont(u8g2_font_open_iconic_check_1x_t);
-  if ((ry & 0b00000100) == 0b00000100) {
+  if ((ry & 0x04) == 0x04) {
     u8g2.drawGlyph(52, 36, 64);
   }
   else {
@@ -689,10 +699,10 @@ void text() {
     // Create buffer to add weak cell id to string
     char buf[7];
     if ( rawI < 0 ) {
-      snprintf(buf, sizeof(buf), "#%dweak", hCid);
+      snprintf(buf, sizeof(buf), "%d wk", hCid);
     }
     else {
-      snprintf(buf, sizeof(buf), "#%dweak", lCid);
+      snprintf(buf, sizeof(buf), "%d wk", lCid);
     }
     u8g2.drawStr(x, 16 + y, buf);
     y += 7;
@@ -782,57 +792,60 @@ void text() {
   }
 
   // Draw count
-  if (ct < 10) {
-    u8g2.setCursor(111, 5);
+  if ( ct > 199 ) {
+    u8g2.setCursor(105, 5);
   }
-  else if (ct >= 10 && ct < 100) {
-    u8g2.setCursor(109, 5);
-  }
-  else if (ct >= 100 && ct < 120) {
-    u8g2.setCursor(107, 5);
-  }
-  else if (ct >= 120 && ct < 200) {
+  else if ( ct > 119 ) {
     u8g2.setCursor(106, 5);
   }
+  else if ( ct > 99 ) {
+    u8g2.setCursor(107, 5);
+  }
+  else if ( ct > 9 ) {
+    u8g2.setCursor(109, 5);
+  }
   else {
-    u8g2.setCursor(105, 5);
+    u8g2.setCursor(111, 5);
   }
   u8g2.print(ct);
 
   // Draw total pack cycles
   u8g2.drawStr(100, 14, "Cycles");
-  if (cc < 10) {
-    u8g2.setCursor(111, 24);
+
+  if ( cc > 199 ) {
+    u8g2.setCursor(105, 24);
   }
-  else if (cc >= 10 && cc < 100) {
-    u8g2.setCursor(109, 24);
-  }
-  else if (cc >= 100 && cc < 120) {
-    u8g2.setCursor(107, 24);
-  }
-  else if (cc >= 120 && cc < 200) {
+  else if ( cc > 119 ) {
     u8g2.setCursor(106, 24);
   }
+  else if ( cc > 99 ) {
+    u8g2.setCursor(107, 24);
+  }
+  else if ( cc > 9 ) {
+    u8g2.setCursor(109, 24);
+  }
   else {
-    u8g2.setCursor(105, 24);
+    u8g2.setCursor(111, 24);
   }
   u8g2.print(cc);
 
   // Draw Ah 
   u8g2.drawStr(109, 35, "Ah");
-  if (ah < 1000) {
-    u8g2.setCursor(108, 44);
-  }
-  if (ah >= 1000 && ah < 10000) {
-    u8g2.setCursor(105, 44);
-  }
-  else if (ah > 11094 && ah < 11195) {
-    u8g2.setCursor(106,  44);
-  }
-  else {
+
+  if ( ah > 11195 ) {
     u8g2.setCursor(103,44);
   }
-  u8g2.print(ah/100, 1);
+  else if ( ah > 11094 ) {
+    u8g2.setCursor(106,  44);
+  }
+  else if ( ah > 999 ) {
+    u8g2.setCursor(105, 44);
+  }
+  else {
+    u8g2.setCursor(108, 44);
+  }
+
+  u8g2.print(ah/100.0, 1);
 
   // Draws pack temp
   u8g2.drawStr(66, 53, "TempH");
@@ -988,31 +1001,4 @@ void loop() {
     }
     while(u8g2.nextPage());
   }
-  //**************************************
-  /*if (Serial) {
-    // Average loop lap time of 256 iterations - reflects the lvgl delay at end of loop
-    static uint8_t i = 0;
-    static uint32_t start_time = millis();
-    static bool finished = false;
-
-    // start iterations
-    if ( i <  255 && ! finished ) {
-      i++;
-    }
-    // calculate and write result
-    else if ( ! finished ) {
-      uint8_t avg_lap = (millis() - start_time) / 256;
-      char buf[30];
-      snprintf(buf, sizeof(buf), "%d ms average loop lap", avg_lap);
-      Serial.println(buf);
-      finished = true;
-    }
-    // start again at 30s intervals
-    else if ( finished && (millis() - start_time) > 30000 ) {
-      i = 0;
-      start_time = millis();
-      finished = false;
-    }
-  }*/
-  //**************************************
 }

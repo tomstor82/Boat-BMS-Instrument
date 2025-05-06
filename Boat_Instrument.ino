@@ -50,7 +50,7 @@ U8G2_SH1106_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 //  MACRO CONSTANTS THAT TAKE NO MEMORY
 #define BUTTON_PIN 2                  // Pin assigned for button
-#define STATION 1                     // 1 cabin or 3 helm
+#define STATION 3                     // 1 cabin or 3 helm
 #define FULL_CAPACITY 200             // battery pack full capacity 200Ah
 
 //  CANBUS Shield pins
@@ -67,6 +67,7 @@ unsigned char rxBuf[8];               // Stores 8 bytes, 1 character  = 1 byte
 //  ID 0x6B2 BYT0+1:LOW_CELL BYT2+3:HIGH_CELL BYT4:HEALTH BYT5+6:CYCLES
 //  ID 0x0A9 BYT0:RELAY_STATE BYT1:CCL BYT2:DCL BYT3+4:PACK_AH BYT5+6:AVG_AMP
 //  ID 0x0BD BYT0+1:CUSTOM_FLAGS BYT2:HI_TMP BYT3:LO_TMP BYT4:COUNTER BYT5:BMS_STATUS
+//  ID 0x0BE BYT0:HI_CELL_ID BYT1:LO_CELL_ID BYT2:BLANK
 
 //  Variables
 uint16_t rawU = 0;                    // Voltage - multiplied by 10
@@ -95,7 +96,7 @@ void setup() {
   //Serial.begin(115200);
 
   // Initialise MCP2515 running at 8MHz and baudrate 250kb/s
-  CAN0.begin(MCP_ANY, CAN_250KBPS, MCP_8MHZ);
+  CAN0.begin(MCP_ANY, CAN_250KBPS, MCP_16MHZ);
 
   CAN0.setMode(MCP_NORMAL);
 
@@ -279,7 +280,6 @@ void gauge(uint8_t angle) {
   uint16_t fs;          // Fault messages & status from CANBus for displaying wrench icon
   byte ry;              // Relay status for determining when to show lightening bolt and sun icon respectively
   int16_t avgI;         // Average current for clock and sun symbol calculations
-  uint16_t ah;          // Ah for clock computations
 
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
@@ -292,7 +292,6 @@ void gauge(uint8_t angle) {
   }
   if(rxId == 0x0A9) {
     ry = (rxBuf[0]);
-    ah = (rxBuf[3] << 8) + rxBuf[4];
     avgI = ((rxBuf[5] << 8) + rxBuf[6]);
   }
 
@@ -404,13 +403,13 @@ void gauge(uint8_t angle) {
   char c[4] = {"hrs"};
   // Discharge
   if (avgI > 0) {
-    h = (ah/100) / (avgI/10.0);
-    m = ((ah/100) / (avgI/10.0) - h) * 60;
+    h = soc / (avgI/10.0);
+    m = (soc / (avgI/10.0) - h) * 60;
   }
   // Charge
   else {
-    h = (FULL_CAPACITY - ah/100) / (abs(avgI)/10.0);
-    m = ((FULL_CAPACITY - ah/100) / (abs(avgI)/10.0) - h) * 60;
+    h = (200 - soc) / (abs(avgI)/10.0);
+    m = ((200 - soc) / (abs(avgI)/10.0) - h) * 60;
   }
   // Adjust x-positon
   if (h > 99 && h <= 120 || h >= 240) { // AND has higher precedence than OR so essentially this is "(h>99 && h<=120) || h>=240"
@@ -586,7 +585,7 @@ void text() {
   }
   if (rxId == 0x0BE ) {
     hCid = rxBuf[0];
-    hCid = rxBuf[1];
+    lCid = rxBuf[1];
   }
 
   // Draw horisontal lines

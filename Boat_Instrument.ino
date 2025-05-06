@@ -31,8 +31,9 @@
 //  01/10/19  Changed abbreviatons on BMS status messages to easier understand their meaning.
 //  02/01/25  Removed code repeats in clock statements. Added "hrs" plural condition and associated string, and arithmetic expression for hrs above 120 displayed as days.
 //  10/03/25  Added low or high cell id for weak cell. Added macros for constants and ah now used for clock computations. Improved dcl and ccl x_pos condition statements. Changed some local data types to save memory and set 0 on initiation.
+//  06/05/25  Replaced buf variable and snprintf(buf) command for "wkCl ID" with u8g2.setCursor and u8g2.print to appear after u8g2.drawStr wkCl, as the former caused loop delay particularly affecting button page switching
 //
-//  Sketch 25510 (25820 serial and loop time tester)
+//  Sketch 25408 (25718 serial and loop time tester)
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -695,15 +696,15 @@ void text() {
   }
   // Flag weak cell fault
   if (((fu & 0x0400) == 0x0400) && y <= 28) {
-    // Create buffer to add weak cell id to string
-    char buf[7];
+    // set cursor position for variable
+    u8g2.setCursor(x + 6, 16 + y);
     if ( rawI < 0 ) {
-      snprintf(buf, sizeof(buf), "%2d wk", hCid);
+      u8g2.print(hCid);
     }
     else {
-      snprintf(buf, sizeof(buf), "%2d wk", lCid);
+      u8g2.print(lCid);
     }
-    u8g2.drawStr(x, 16 + y, buf);
+    u8g2.drawStr(x, 16 + y, "wkCl");
     y += 7;
   }
   // Flag low cell fault

@@ -166,8 +166,8 @@ void amperage(uint8_t angle) {
   u8g2.drawLine(122, 31, 116, 36);
 
   // Draw the needle and disc - trigonometry used radians
-  float x1 = sin(2*angle*2*PI/360);
-  float y1 = cos(2*angle*2*PI/360);
+  float x1 = sin(2*angle*2*3.14/360);
+  float y1 = cos(2*angle*2*3.14/360);
   u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
   u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_RIGHT);
@@ -257,8 +257,8 @@ void voltage(uint8_t angle) {
   u8g2.drawLine(93, 18, 98, 20);
 
   // Draw the needle and disc - trigonometry used radians
-  float x1 = sin(2*angle*2*PI/360);
-  float y1 = cos(2*angle*2*PI/360);
+  float x1 = sin(2*angle*2*3.14/360);
+  float y1 = cos(2*angle*2*3.14/360);
   u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
   u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_RIGHT);
@@ -316,8 +316,8 @@ void gauge(uint8_t angle) {
   u8g2.drawCircle(xcenter, ycenter, arc+4, U8G2_DRAW_UPPER_LEFT);
 
   // Draw the needle and disc - trigonometry used radians
-  float x1 = sin(2*angle*2*PI/360);
-  float y1 = cos(2*angle*2*PI/360);
+  float x1 = sin(2*angle*2*3.14/360);
+  float y1 = cos(2*angle*2*3.14/360);
   u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
   u8g2.drawDisc(xcenter, ycenter, 5, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(xcenter, ycenter, 5, U8G2_DRAW_UPPER_RIGHT);

@@ -33,7 +33,7 @@
 //  10/03/25  Added low or high cell id for weak cell. Added macros for constants and ah now used for clock computations. Improved dcl and ccl x_pos condition statements. Changed some local data types to save memory and set 0 on initiation.
 //  06/05/25  Replaced buf variable and snprintf(buf) command for "wkCl ID" with u8g2.setCursor and u8g2.print to appear after u8g2.drawStr wkCl, as the former caused loop delay particularly affecting button page switching
 //
-//  Sketch 25408 (25718 serial and loop time tester)
+//  Sketch 25396 (25706 serial and loop time tester)
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -53,6 +53,11 @@ U8G2_SH1106_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 #define BUTTON_PIN 2                  // Pin assigned for button
 #define STATION 3                     // 1 cabin or 3 helm
 #define FULL_CAPACITY 200             // battery pack full capacity 200Ah
+#define XMAX 128                      // display dimensions
+#define YMAX 64
+#define XCTR 32                       // needle centre coordinates
+#define YCTR 80
+#define ARC 64                        // arc width for voltage and amp display
 
 //  CANBUS Shield pins
 #define CAN0_INT 9                    // Set INT to pin 9
@@ -144,16 +149,9 @@ void amperage(uint8_t angle) {
     mapped_angle = map(rawI,-50,50,50,0);
   }
 
-  // Display dimensions
-  byte xmax = 128;
-  byte ymax = 64;
-  byte xcenter = xmax/2;
-  byte ycenter = 80;
-  byte arc = 64;
-
   // Draw arc and scale lines
-  u8g2.drawCircle(xcenter, ycenter+4, arc+8);
-  u8g2.drawCircle(xcenter, ycenter+4, arc+12);
+  u8g2.drawCircle(XCTR, YCTR+4, ARC+8);
+  u8g2.drawCircle(XCTR, YCTR+4, ARC+12);
   // Draw far left line
   u8g2.drawLine(6, 31, 12, 36);
   // Draw quarter left line
@@ -168,9 +166,9 @@ void amperage(uint8_t angle) {
   // Draw the needle and disc - trigonometry used radians
   float x1 = sin(2*angle*2*3.14/360);
   float y1 = cos(2*angle*2*3.14/360);
-  u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
-  u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawLine(XCTR, YCTR, XCTR+ARC*x1, YCTR-ARC*y1);
+  u8g2.drawDisc(XCTR, YMAX+10, 20, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawDisc(XCTR, YMAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
 
   // Draw 3 different scale labels
   u8g2.setFont(u8g2_font_chikita_tf);
@@ -218,16 +216,9 @@ void voltage(uint8_t angle) {
   // Map voltage from 44,0V - 64,0V between 0 - 50
   mapped_angle = map(rawU, 440,640,0,50);
 
-  // Display dimensions
-  byte xmax = 128;
-  byte ymax = 64;
-  byte xcenter = xmax/2;
-  byte ycenter = 80;
-  byte arc = 64;
-
   // Draw arc and scale lines
-  u8g2.drawCircle(xcenter, ycenter+4, arc+8);
-  u8g2.drawCircle(xcenter, ycenter+4, arc+12);
+  u8g2.drawCircle(XCTR, YCTR+4, ARC+8);
+  u8g2.drawCircle(XCTR, YCTR+4, ARC+12);
   // Draw far left line
   u8g2.drawLine(6, 31, 12, 36);
   // Draw left line
@@ -259,9 +250,9 @@ void voltage(uint8_t angle) {
   // Draw the needle and disc - trigonometry used radians
   float x1 = sin(2*angle*2*3.14/360);
   float y1 = cos(2*angle*2*3.14/360);
-  u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
-  u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawLine(XCTR, YCTR, XCTR+ARC*x1, YCTR-ARC*y1);
+  u8g2.drawDisc(XCTR, YMAX+10, 20, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawDisc(XCTR, YMAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
   // Draw scale labels
   u8g2.drawStr(0, 29, "44");
   u8g2.drawStr(24, 11, "49");
@@ -303,24 +294,21 @@ void gauge(uint8_t angle) {
   p = (abs(rawI)/10.0)*rawU/10.0;
 
   // Display dimensions
-  byte xmax = 128;
-  byte ymax = 64;
-  byte xcenter = xmax/2;
-  byte ycenter = ymax/2+10;
-  byte arc = ymax/2;
+  byte ycenter = 42;
+  byte arc = 32;
 
   // Draw border of the gauge
-  u8g2.drawCircle(xcenter, ycenter, arc+6, U8G2_DRAW_UPPER_RIGHT);
-  u8g2.drawCircle(xcenter, ycenter, arc+4, U8G2_DRAW_UPPER_RIGHT);
-  u8g2.drawCircle(xcenter, ycenter, arc+6, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawCircle(xcenter, ycenter, arc+4, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawCircle(XCTR, ycenter, arc+6, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawCircle(XCTR, ycenter, arc+4, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawCircle(XCTR, ycenter, arc+6, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawCircle(XCTR, ycenter, arc+4, U8G2_DRAW_UPPER_LEFT);
 
   // Draw the needle and disc - trigonometry used radians
   float x1 = sin(2*angle*2*3.14/360);
   float y1 = cos(2*angle*2*3.14/360);
-  u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
-  u8g2.drawDisc(xcenter, ycenter, 5, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawDisc(xcenter, ycenter, 5, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawLine(XCTR, ycenter, XCTR+arc*x1, ycenter-arc*y1);
+  u8g2.drawDisc(XCTR, ycenter, 5, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawDisc(XCTR, ycenter, 5, U8G2_DRAW_UPPER_RIGHT);
  
   // Draw scale labels
   u8g2.drawStr(20, 42, "0");

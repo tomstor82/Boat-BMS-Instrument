@@ -31,9 +31,9 @@
 //  01/10/19  Changed abbreviatons on BMS status messages to easier understand their meaning.
 //  02/01/25  Removed code repeats in clock statements. Added "hrs" plural condition and associated string, and arithmetic expression for hrs above 120 displayed as days.
 //  21/05/25  Serial set to 115200. Reduced clock memory usage with only one string object. Changed weak cell to not use char array but print low og high cell number directly to save memory.
-//  04/06/25  Merged cabin v2 (working) with added CAN send feature to clear BMS faults. Added STATION macro to unify helm and cabin.
+//  04/06/25  Merged cabin v2 (working) with added CAN send feature to clear BMS faults. Added STATION macro to unify helm and cabin. Changed va_angle and p_angle from u8g2_uint_t data type
 //
-//  Sketch 25772 bytes
+//  Sketch 25724 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -81,14 +81,14 @@ byte wrench = 0;              // Wrench icon variable
 byte angle = 0;               // Needle angle
 uint16_t p = 0;               // Watt reading
 byte m = 0;                   // Mapped values to fit needle
-u8g2_uint_t va_angle = 0;     // 8 bit unsigned int amperage and voltage needle angle
-u8g2_uint_t p_angle = 0;      // 8 bit unsigned int watt needle angle
+byte va_angle = 0;            // 8 bit unsigned int amperage and voltage needle angle
+byte p_angle = 0;             // 8 bit unsigned int watt needle angle
 byte c = 180;                 // 8 bit unsigned integer range from 0-255 (low - high contrast)
 
 //  Button settings
 long millis_held;             // 4 byte variable for storing duration button is held down
 unsigned long firstTime;      // 4 byte variable for storing time button is first pushed
-byte previous = HIGH;         // Pin state before pushing or releasing button
+byte previous = HIGH;         // Pin state before pushing or releasing button ** NOTE: Bool uses more memory as it takes up at least 1 byte
 byte buttonState;             // Variable for button pushed or not
 byte hits = STATION - 1;      // For some reason on startup it starts on page 2 if not
 

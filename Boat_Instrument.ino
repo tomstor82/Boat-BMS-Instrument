@@ -19,21 +19,21 @@
 //  30/06/19  Added rxBuf for "ry" in gauge for displaying "sun" only when relay enabled; added bms status to new variable "fs" for "wrench" icon display; adjusted "0A" DCH & CHG limits.
 //  09/07/19  Replaced counter with total pack cycles
 //  27/07/19  Added counter and adjusted cycles on text page; Adjusted Ah digit position
-//  30/08/19  Removed constraints on values and assigned minimum values to variables to avoid out of scale indications when power up; Changed low SOC warning to display below 20% SOC as long as charge safety relay in open.
+//  30/08/19  Removed constraints on values and assigned minimum values to variables to voltamp_angleoid out of scale indications when power up; Changed low SOC warning to display below 20% SOC as long as charge safety relay in open.
 //  05/09/19  Returned limits of bars and text to previous values. **Never change things that work**; Improved Amp bar code; Refined when sun charge icon should appear.
-//  11/09/19  Changed time and watt calculations to use average current. Changed charging symbols to use average current.
-//  21/09/19  Removed the absolute and average current algorithm as I detected no values from CANBUS.
+//  11/09/19  Changed time and watt calculations to use voltamp_angleerage current. Changed charging symbols to use voltamp_angleerage current.
+//  21/09/19  Removed the absolute and voltamp_angleerage current algorithm as I detected no values from CANBUS.
 //  22/09/19  Edited CANBUS data to fit Avg and Abs current as I suspect the rxId int is unable to fit a 5th Id. AvgI used for watt and clock computations; **** modified clock calculations. ****
 //  23/09/19  Adjusted clock position two pixels left when hours exceed 99.
 //  24/09/19  Replaced avgI with rawI for displaying lightning symbol whilst charging.
-//  25/09/19  Added button press to swap between average and instant Watt reading. But had no success changing between the values. **** Deleted ****
+//  25/09/19  Added button press to swap between voltamp_angleerage and instant Watt reading. But had no success changing between the values. **** Deleted ****
 //  29/09/19  Added button press to change contrast level. ** Replaced "if" in void loop button pressing for "else if & else" same with "hits". Saves 20 bytes.
 //  01/10/19  Changed abbreviatons on BMS status messages to easier understand their meaning.
 //  02/01/25  Removed code repeats in clock statements. Added "hrs" plural condition and associated string, and arithmetic expression for hrs above 120 displayed as days.
-//  10/03/25  Added low or high cell id for weak cell. Added macros for constants and ah now used for clock computations. Improved dcl and ccl x_pos condition statements. Changed some local data types to save memory and set 0 on initiation.
-//  06/05/25  Replaced buf variable and snprintf(buf) command for "wkCl ID" with u8g2.setCursor and u8g2.print to appear after u8g2.drawStr wkCl, as the former caused loop delay particularly affecting button page switching
+//  21/05/25  Serial set to 115200. Reduced clock memory usage with only one string object. Changed weak cell to not use char array but print low og high cell number directly to save memory.
+//  04/06/25  Merged cabin v2 (working) with added CAN send feature to clear BMS faults. Added STATION macro to unify helm and cabin.
 //
-//  Sketch 25396 (25706 serial and loop time tester)
+//  Sketch 23944 bytes (26698 02/01/25) now 25798 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -49,63 +49,60 @@
 //  OLED library driver
 U8G2_SH1106_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
-//  MACRO CONSTANTS THAT TAKE NO MEMORY
-#define BUTTON_PIN 2                  // Pin assigned for button
-#define STATION 3                     // 1 cabin or 3 helm
-#define FULL_CAPACITY 200             // battery pack full capacity 200Ah
-#define XMAX 128                      // display dimensions
-#define YMAX 64
-#define XCTR 32                       // needle centre coordinates
-#define YCTR 80
-#define ARC 64                        // arc width for voltage and amp display
-
 //  CANBUS Shield pins
-#define CAN0_INT 9                    // Set INT to pin 9
-MCP_CAN CAN0(10);                     // Set CS to pin 10
+#define CAN0_INT 9                              // Set INT to pin 9
+MCP_CAN CAN0(10);                               // Set CS to pin 10
 
-//  MCP_CAN DATA
-long unsigned int rxId;               // Stores 4 bytes 32 bits
-unsigned char len = 0;                // Stores at least 1 byte
-unsigned char rxBuf[8];               // Stores 8 bytes, 1 character  = 1 byte
+//  CANBUS RX
+long unsigned int rxId;     // Stores 4 bytes 32 bits
+unsigned char len = 0;      // Stores at least 1 byte
+unsigned char rxBuf[8];     // Stores 8 bytes, 1 character  = 1 byte
 
-//  CANBUS data Identifier List
+//  CANBUS TX
+byte mpo[8] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Multi-purpose output activation signal
+/*byte mpe[8] = {0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};*/ // Multi-purpose enable activation signal
+
+//  CANBUS RX data Identifier List
 //  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC **** ABS_AMP from OrionJr errendous ****
 //  ID 0x6B2 BYT0+1:LOW_CELL BYT2+3:HIGH_CELL BYT4:HEALTH BYT5+6:CYCLES
 //  ID 0x0A9 BYT0:RELAY_STATE BYT1:CCL BYT2:DCL BYT3+4:PACK_AH BYT5+6:AVG_AMP
 //  ID 0x0BD BYT0+1:CUSTOM_FLAGS BYT2:HI_TMP BYT3:LO_TMP BYT4:COUNTER BYT5:BMS_STATUS
-//  ID 0x0BE BYT0:HI_CELL_ID BYT1:LO_CELL_ID BYT2:BLANK
+
+#define XMAX 128              // Display width
+#define YMAX 64               // Display height
+#define BUTTON_PIN 2          // Button pin number
+#define STATION 1             // Set 1 for cabin or 3 for helm
 
 //  Variables
-uint16_t rawU = 0;                    // Voltage - multiplied by 10
-int rawI = 0;                         // Current - multiplied by 10 - negative value indicates charge
-byte soc = 0;                         // State of charge - multiplied by 2
-byte wrench = 0;                      // Wrench icon variable
-byte angle = 0;                       // Needle angle
-uint16_t p = 0;                       // Watt reading
-int mapped_angle = 0;                 // Mapped values to fit needle
-u8g2_uint_t needle_angle_va = 0;      // 8 bit unsigned int amperage and voltage needle angle
-u8g2_uint_t needle_angle_p = 0;       // 8 bit unsigned int watt needle angle
-uint8_t c = 180;                      // 8 bit unsigned integer range from 0-255 (low - high contrast)
+uint16_t rawU = 0;            // Voltage - multiplied by 10
+int16_t rawI = 0;             // Current - multiplied by 10 - negative value indicates charge
+byte soc = 0;                 // State of charge - multiplied by 2
+byte wrench = 0;              // Wrench icon variable
+byte angle = 0;               // Needle angle
+uint16_t p = 0;               // Watt reading
+byte m = 0;                   // Mapped values to fit needle
+u8g2_uint_t va_angle = 0;     // 8 bit unsigned int amperage and voltage needle angle
+u8g2_uint_t p_angle = 0;      // 8 bit unsigned int watt needle angle
+byte c = 180;                 // 8 bit unsigned integer range from 0-255 (low - high contrast)
 
 //  Button settings
-long millis_held = 0;                 // 4 byte variable for storing duration button is held down
-unsigned long firstTime = 0;          // 4 byte variable for storing time button is first pushed
-bool buttonState = LOW;               // Variable for button pushed or not
-bool previous = HIGH;                 // Pin state before pushing or releasing button
-byte hits = 0;                        // Variable for how many times button has bin pushed
+long millis_held;             // 4 byte variable for storing duration button is held down
+unsigned long firstTime;      // 4 byte variable for storing time button is first pushed
+byte previous = HIGH;         // Pin state before pushing or releasing button
+byte buttonState;             // Variable for button pushed or not
+byte hits = STATION - 1;      // For some reason on startup it starts on page 2 if not
 
 // ------------------------ setup ------------------------------
 
 void setup() {
-
   // Start serial monitor communication
   //Serial.begin(115200);
 
   // Initialise MCP2515 running at 8MHz and baudrate 250kb/s
-  CAN0.begin(MCP_ANY, CAN_250KBPS, MCP_16MHZ);
+  CAN0.begin(MCP_ANY, CAN_250KBPS, MCP_8MHZ);
 
   CAN0.setMode(MCP_NORMAL);
-
+  
   // Configure pin for INT input
   pinMode(CAN0_INT, INPUT);
 
@@ -117,15 +114,13 @@ void setup() {
 }
 // -------------------- set contrast -----------------------------
 
-void contrast(uint8_t c) {
-
-  // Set contrast
+void contrast(byte c) {
   u8g2.setContrast(c);
 }
 
 // -------------------- amperage display * 2 bytes from rxBuf -------------------------
 
-void amperage(uint8_t angle) {
+void amperage(byte angle) {
 
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
@@ -134,24 +129,29 @@ void amperage(uint8_t angle) {
 
   // Map various amp readings to between 0-50. 0 = discharge 50 = charge
   if (rawI > 1000 || rawI < -1000) {
-    mapped_angle = map(rawI,-2500,2500,50,0);
+    m = map(rawI,-2500,2500,50,0);
   }
   else if (rawI > 500 || rawI < -500) {
-    mapped_angle = map(rawI,-1000,1000,50,0);
+    m = map(rawI,-1000,1000,50,0);
   }
   else if (rawI > 100 || rawI < -100) {
-    mapped_angle = map(rawI, -500,500,50,0);
+    m = map(rawI, -500,500,50,0);
   }
   else  if (rawI > 50 || rawI < -50) {
-    mapped_angle = map(rawI, -100,100,50,0);
+    m = map(rawI, -100,100,50,0);
   }
   else {
-    mapped_angle = map(rawI,-50,50,50,0);
+    m = map(rawI,-50,50,50,0);
   }
 
+  // Display dimensions
+  byte xcenter = XMAX/2;
+  byte ycenter = 80;
+  byte arc = 64;
+
   // Draw arc and scale lines
-  u8g2.drawCircle(XCTR, YCTR+4, ARC+8);
-  u8g2.drawCircle(XCTR, YCTR+4, ARC+12);
+  u8g2.drawCircle(xcenter, ycenter+4, arc+8);
+  u8g2.drawCircle(xcenter, ycenter+4, arc+12);
   // Draw far left line
   u8g2.drawLine(6, 31, 12, 36);
   // Draw quarter left line
@@ -162,39 +162,40 @@ void amperage(uint8_t angle) {
   u8g2.drawLine(97, 13, 93, 20);
   // Draw far right line
   u8g2.drawLine(122, 31, 116, 36);
-
-  // Draw the needle and disc - trigonometry used radians
+  
+    
+  // Draw the needle and disc
   float x1 = sin(2*angle*2*3.14/360);
-  float y1 = cos(2*angle*2*3.14/360);
-  u8g2.drawLine(XCTR, YCTR, XCTR+ARC*x1, YCTR-ARC*y1);
-  u8g2.drawDisc(XCTR, YMAX+10, 20, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawDisc(XCTR, YMAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
+  float y1 = cos(2*angle*2*3.14/360); 
+  u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
+  u8g2.drawDisc(xcenter, YMAX+10, 20, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawDisc(xcenter, YMAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
 
   // Draw 3 different scale labels
   u8g2.setFont(u8g2_font_chikita_tf);
   // Scale from -250 till 250
   if (rawI > 1000 || rawI < -1000) {
-    u8g2.drawStr(0, 22, "250");
+    u8g2.drawStr(0, 22, "250");                   
     u8g2.drawStr(106, 22, "-250");
   }
   // Scale from -100 till 100
   else if (rawI > 500 || rawI < -500) {
-    u8g2.drawStr(0, 24, "100");
+    u8g2.drawStr(0, 24, "100");                   
     u8g2.drawStr(110, 24, "-100");
   }
   // Scale from -50 till 50
   else if (rawI > 100 || rawI <-100) {
-    u8g2.drawStr(0, 26, "50");
+    u8g2.drawStr(0, 26, "50");                   
     u8g2.drawStr(112, 26, "-50");
   }
   // Scale from -10 till 10
   else if (rawI > 50 || rawI < -50) {
-    u8g2.drawStr(0, 28, "10");
+    u8g2.drawStr(0, 28, "10");                   
     u8g2.drawStr(115, 28, "-10");
   }
   // Scale from -5 till 5
   else {
-    u8g2.drawStr(0, 29, "5");
+    u8g2.drawStr(0, 29, "5");                   
     u8g2.drawStr(117, 29, "-5");
   }
   // Zero never changes
@@ -207,18 +208,23 @@ void amperage(uint8_t angle) {
 
 // --------------------- volt display * 2 bytes from rxBuf-----------------------
 
-void voltage(uint8_t angle) {
+void voltage(byte angle) {
 
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
-    rawU = ((rxBuf[0] << 8) + rxBuf[1]);
+    rawU = ((rxBuf[0] << 8) + rxBuf[1]);  
   }
   // Map voltage from 44,0V - 64,0V between 0 - 50
-  mapped_angle = map(rawU, 440,640,0,50);
+  m = map(rawU, 440,640,0,50);
+
+  // Display dimensions
+  byte xcenter = XMAX/2;
+  byte ycenter = 80;
+  byte arc = 64;
 
   // Draw arc and scale lines
-  u8g2.drawCircle(XCTR, YCTR+4, ARC+8);
-  u8g2.drawCircle(XCTR, YCTR+4, ARC+12);
+  u8g2.drawCircle(xcenter, ycenter+4, arc+8);
+  u8g2.drawCircle(xcenter, ycenter+4, arc+12);
   // Draw far left line
   u8g2.drawLine(6, 31, 12, 36);
   // Draw left line
@@ -233,8 +239,9 @@ void voltage(uint8_t angle) {
   u8g2.drawLine(99, 17, 97, 20);
   // Draw far right line
   u8g2.drawLine(122, 31, 116, 36);
-
-  // Min shading lines
+  
+  
+ // Min shading lines
   u8g2.drawLine(12, 30, 9, 33);
   u8g2.drawLine(13, 30, 10, 33);
   u8g2.drawLine(13, 31, 10, 34);
@@ -246,16 +253,16 @@ void voltage(uint8_t angle) {
   u8g2.drawLine(94, 17, 98, 19);
   u8g2.drawLine(93, 17, 97, 19);
   u8g2.drawLine(93, 18, 98, 20);
-
-  // Draw the needle and disc - trigonometry used radians
+  
+  // Draw the needle and disc
   float x1 = sin(2*angle*2*3.14/360);
-  float y1 = cos(2*angle*2*3.14/360);
-  u8g2.drawLine(XCTR, YCTR, XCTR+ARC*x1, YCTR-ARC*y1);
-  u8g2.drawDisc(XCTR, YMAX+10, 20, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawDisc(XCTR, YMAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
+  float y1 = cos(2*angle*2*3.14/360); 
+  u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
+  u8g2.drawDisc(xcenter, YMAX+10, 20, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawDisc(xcenter, YMAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
   // Draw scale labels
-  u8g2.drawStr(0, 29, "44");
-  u8g2.drawStr(24, 11, "49");
+  u8g2.drawStr(0, 29, "44"); 
+  u8g2.drawStr(24, 11, "49");                  
   u8g2.drawStr(59, 5, "54");
   u8g2.drawStr(92, 10, "59");
   u8g2.drawStr(118, 29, "64");
@@ -265,14 +272,17 @@ void voltage(uint8_t angle) {
 
 }
 
-// --------------------- gauge display * 13 bytes from rxBuf ----------------------
+// --------------------- power display * 11 bytes from rxBuf ----------------------
 
-void gauge(uint8_t angle) {
+void power(byte angle) {
 
-  uint16_t fs;          // Fault messages & status from CANBus for displaying wrench icon
-  byte ry;              // Relay status for determining when to show lightening bolt and sun icon respectively
-  int16_t avgI;         // Average current for clock and sun symbol calculations
-
+  // Fault messages & status from CANBus for displaying wrench icon
+  int fs;
+  // Relay status for determining when to show lightening bolt and sun icon respectively
+  byte ry;
+  // Average current for clock and sun symbol calculations
+  int avgI;
+  
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
     rawU = ((rxBuf[0] << 8) + rxBuf[1]);
@@ -288,30 +298,31 @@ void gauge(uint8_t angle) {
   }
 
   // Map watt readings 0-10000 to between 0-90
-  mapped_angle = map(p,0,10000,0,90);
+  m = map(p,0,10000,0,90);
 
   // Watt calculation
-  p = (abs(rawI)/10.0)*rawU/10.0;
-
+  p = (abs(rawI)*rawU)/100.0;
+  
   // Display dimensions
-  byte ycenter = 42;
-  byte arc = 32;
+  byte xcenter = XMAX/2;
+  byte ycenter = YMAX/2+10;
+  byte arc = YMAX/2;
 
   // Draw border of the gauge
-  u8g2.drawCircle(XCTR, ycenter, arc+6, U8G2_DRAW_UPPER_RIGHT);
-  u8g2.drawCircle(XCTR, ycenter, arc+4, U8G2_DRAW_UPPER_RIGHT);
-  u8g2.drawCircle(XCTR, ycenter, arc+6, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawCircle(XCTR, ycenter, arc+4, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawCircle(xcenter, ycenter, arc+6, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawCircle(xcenter, ycenter, arc+4, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawCircle(xcenter, ycenter, arc+6, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawCircle(xcenter, ycenter, arc+4, U8G2_DRAW_UPPER_LEFT);
 
-  // Draw the needle and disc - trigonometry used radians
+  // Draw the needle
   float x1 = sin(2*angle*2*3.14/360);
-  float y1 = cos(2*angle*2*3.14/360);
-  u8g2.drawLine(XCTR, ycenter, XCTR+arc*x1, ycenter-arc*y1);
-  u8g2.drawDisc(XCTR, ycenter, 5, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawDisc(XCTR, ycenter, 5, U8G2_DRAW_UPPER_RIGHT);
+  float y1 = cos(2*angle*2*3.14/360); 
+  u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
+  u8g2.drawDisc(xcenter, ycenter, 5, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawDisc(xcenter, ycenter, 5, U8G2_DRAW_UPPER_RIGHT);
  
   // Draw scale labels
-  u8g2.drawStr(20, 42, "0");
+  u8g2.drawStr(20, 42, "0");                   
   u8g2.drawStr(24, 18, "25");
   u8g2.drawStr(60, 14, "50");
   u8g2.drawStr(95, 18, "75");
@@ -324,7 +335,7 @@ void gauge(uint8_t angle) {
   u8g2.drawStr(88, 60, " WATT");
      
   // Draw digital value and align its position
-  u8g2.setFont(u8g2_font_profont22_tn);
+  u8g2.setFont(u8g2_font_profont22_tn);             
   u8g2.setCursor(65,60);
   // Draw leading 0 when values below 10W
   if (p < 10){
@@ -343,33 +354,23 @@ void gauge(uint8_t angle) {
     u8g2.setCursor(29,60);
   }
   u8g2.print(p);
-
-  // If charge current is above 30A with charge relay active, show sun to indicate solar is also contributing
-  if ( avgI < -300 && (ry & 0x02) == 0x02 ) {
+  
+  // Draw lightening bolt when charge current above 20A and charge safety relay is closed
+  if (rawI < -200 && (ry & 0b00000100) == 0b00000100) {
+    u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
+    u8g2.drawGlyph(4, 40, 67);
+  }
+  // Draw sun when charge current is above 0A and charge relay is closed and charge safety relay is open or above 30A charge and charge safety relay closed
+  if (avgI < 0 && (ry & 0b00000010) == 0b00000010 && (ry & 0b00000100) != 0b00000100 || avgI < -300 && (ry & 0b00000010) == 0b00000010 && (ry & 0b00000100) == 0b00000100) {
     u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
     u8g2.drawGlyph(4, 39, 69);
   }
-  // If charge show either sun or lightening bolt depending on which relay is active
-  else if ( avgI < 0 ) {
-    // DRAW LIGHTENING BOLT IF CHARGER SAFETY RELAY ACTIVE
-    if ( (ry & 0x04) == 0x04 ) {
-      u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
-      u8g2.drawGlyph(4, 40, 67);
-    }
-    // DRAW SUN IF CHARGE RELAY ACTIVE
-    else if ( (ry & 0x02) == 0x02 ) {
-      u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
-      u8g2.drawGlyph(4, 39, 69);
-    }
-  }
-
-  // Draw warning symbol at and below 20% State of Charge if discharging
-  else if ( soc <= 40 && avgI > 0 ) {   // soc from canbus is multiplied by 2
+  // Draw warning symbol at and below 20% State of Charge if charge safety relay is open
+  if (soc <= 40 && (ry & 0b00000100) != 0b00000100) {   // soc from canbus is multiplied by 2
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 39, 71);
   }
-
-  // Draw wrench icon if BMS flags have not been seen
+  // Draw wrench icon if BMS flags hvoltamp_anglee not been seen
   if (fs != wrench) {
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(3, 62, 72);
@@ -387,9 +388,8 @@ void gauge(uint8_t angle) {
   
   // Draw clock
   uint16_t h;
-  uint8_t m;
-  char t[11] = "";
-  char c[4] = {"hrs"};
+  byte m;
+  const char time_str[10];
   // Discharge
   if (avgI > 0) {
     h = soc / (avgI/10.0);
@@ -407,32 +407,36 @@ void gauge(uint8_t angle) {
   else {
     u8g2.setCursor(88, 5);
   }
+
   // Set days if above 120 hrs
   if (h > 120) {
-    uint8_t d = 24 / h;
-    sprintf(t, "+%d days", d);
+    byte d = 24 / h;
+    // Generate string
+    sprintf(time_str, "%d days", d);
+  }
+  else {
+    const char plural[2] = {"s"};
+    // Remove plural if 1
+    if (h == 1) {
+      strcpy(plural, "");
+    }
+    // Generate string
+    sprintf(time_str, "%02d:%02dhr%s", h, m, plural);
   }
 
-  else {
-    // Plural if not 1
-    if (h == 1) {
-      strcpy(c, "hr");
-    }
-    sprintf(t, "%02d:%02d%s", h, m, c);
-  }
-  // Print
-  u8g2.print(t);
+  // Print string
+  u8g2.print(time_str);
 }
  
-// ------------------------ bars gauge * 9 bytes from rxBuf ------------------------
+// ------------------------ bars gauge * 7 bytes from rxBuf ------------------------
 
 void bars() {
-
+  
   // Variables from CANBus
-  uint16_t hC;        // High Cell Voltage in 0,0001V
-  uint16_t lC;        // Low Cell Voltage in 0,0001V
-  byte h;             // Health
-
+  uint16_t hC;      // High Cell Voltage in 0,0001V
+  uint16_t lC;      // Low Cell Voltage in 0,0001V
+  byte h;           // Health *was int
+  
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
     rawU = ((rxBuf[0] << 8) + rxBuf[1]);
@@ -454,26 +458,27 @@ void bars() {
   u8g2.drawBox(7, 44-pV, 7, pV);
   
   // Draw Min and Max cell voltage bars
-  int hCb = ((hC / 1000.0)-2.7)*26.9;
-  int lCb = ((lC / 1000.0)-2.7)*26.9;
+  int hCb = ((hC/1000.00)-2.7)*26.9;
+  int lCb = ((lC/1000.00)-2.7)*26.9;
   u8g2.setCursor(28, 5);
-  u8g2.print((hC / 1000.0), 2); // Two decimals
+  u8g2.print(hC/1000.00, 2); // Two decimals
   u8g2.drawStr(28, 56, "High");
   u8g2.drawStr(29, 63, "Cell");
   u8g2.drawFrame(31, 8, 11, 38);
-  if (hCb <= 35 && hCb > 0) {
+  if (hC <= 4000 && hC >= 2700) {
     u8g2.drawBox(33, 44-hCb, 7, hCb);
   }
   u8g2.setCursor(54, 5);
-  u8g2.print((lC / 1000.0), 2);  // Two decimals
+  u8g2.print(lC/1000.00, 2);  // Two decimals
   u8g2.drawStr(54, 56, "Low");
   u8g2.drawStr(55, 63, "Cell");
   u8g2.drawFrame(57, 8, 11, 38);
-  if (lCb <= 35 && lCb > 0) {
+  if (lC <= 4000 && lC >= 2700) {
     u8g2.drawBox(59, 44-lCb, 7, lCb);
   }
   
   // Draw health bar
+  
   int hBar = h*0.34;
   if (h >= 0 && h <= 9) {
     u8g2.setCursor(88, 5);  // Shift position at and above 0%
@@ -499,7 +504,7 @@ void bars() {
   }
   else if (rawI > 190 && rawI <= 999) {        // Shift position above 19A
     u8g2.setCursor(111, 5);
-  }
+  }  
   else if (rawI > 999 && rawI <= 1999) {       // Shift position above 99A
     u8g2.setCursor(110, 5);
   }
@@ -535,15 +540,15 @@ void bars() {
     u8g2.drawBox(113, 10, 7, 34);
   }
 }
-// ------------------------ text display * 18 bytes from rxBuf ---------------------
+// ------------------------ text display * 13 bytes from rxBuf ---------------------
 
 void text() {
 
-  // Variables from CANBus
+  // Variables from CANBus ** NOTE: Setting Static cause crash and initialising variables as 0 makes bar graphs flap
   uint16_t fu;            // BMS faults
   byte hT;                // Highest cell temperature *was int
   byte lT;                // Lowest cell temperature * was int
-  uint16_t ah;            // Amp hours
+  uint16_t ah;            // Amp hours *was float
   byte ry;                // Relay status
   byte dcl;               // Discharge current limit * was unsigned int
   byte ccl;               // Charge current limit * was unsigned int
@@ -569,14 +574,13 @@ void text() {
     lT = rxBuf[3];
     ct = rxBuf[4];
     st = rxBuf[5];
-    // Saves fault & status to "wrench" after reviewing text page
-    wrench = (rxBuf[0] + rxBuf[1] + rxBuf[5]);
+    wrench = (rxBuf[0] + rxBuf[1] + rxBuf[5]);    // Saves fault & status to "wrench" after reviewing text page
   }
   if (rxId == 0x0BE ) {
     hCid = rxBuf[0];
     lCid = rxBuf[1];
   }
-
+  
   // Draw horisontal lines
   u8g2.drawHLine(0, 7, 128);
   u8g2.drawHLine(0, 37, 62);
@@ -589,12 +593,12 @@ void text() {
   // Draw vertical lines
   u8g2.drawVLine(62, 0, 64);
   u8g2.drawVLine(97, 0, 64);
-
+  
   // Draw relay status
   u8g2.drawStr(0, 5, "Relay Status");
   u8g2.drawStr(0, 16, "Discharge");
   u8g2.setFont(u8g2_font_open_iconic_check_1x_t);
-  if ((ry & 0x01) == 0x01) {
+  if ((ry & 0b00000001) == 0b00000001) {
     u8g2.drawGlyph(52, 18, 64);
   }
   else {
@@ -603,7 +607,7 @@ void text() {
   u8g2.setFont(u8g2_font_chikita_tf);
   u8g2.drawStr(0, 25, "Charge");
   u8g2.setFont(u8g2_font_open_iconic_check_1x_t);
-  if ((ry & 0x02) == 0x02) {
+  if ((ry & 0b00000010) == 0b00000010) {
     u8g2.drawGlyph(52, 27, 64);
   }
   else {
@@ -612,74 +616,64 @@ void text() {
   u8g2.setFont(u8g2_font_chikita_tf);
   u8g2.drawStr(0, 34, "Chg Safety");
   u8g2.setFont(u8g2_font_open_iconic_check_1x_t);
-  if ((ry & 0x04) == 0x04) {
+  if ((ry & 0b00000100) == 0b00000100) {
     u8g2.drawGlyph(52, 36, 64);
   }
   else {
     u8g2.drawGlyph(52, 36, 68);
   }
 
-  // Current limit
-  u8g2.setFont(u8g2_font_chikita_tf);
-  u8g2.drawStr(0, 44, "Current Limit");
-
-  // Discharge current limit
-  u8g2.drawStr(0, 55, "DCH");
-
-  if (dcl >= 200) {
+  // Current limit 
+  u8g2.setFont(u8g2_font_chikita_tf); 
+  u8g2.drawStr(0, 44, "Current Limit"); 
+  // Discharge current limit 
+  u8g2.drawStr(0, 55, "DCH"); 
+  if (dcl >= 0 && dcl < 10) { 
+    u8g2.setCursor(47, 55); 
+  }
+  else if (dcl >= 10 && dcl < 20) {
+    u8g2.setCursor(42, 64);
+  }
+  else if (dcl >= 20 && dcl < 100) { 
+    u8g2.setCursor(40, 55); 
+  } 
+  else if (dcl >= 100 && dcl < 200) { 
+    u8g2.setCursor(36, 55); 
+  }
+  else {
     u8g2.setCursor(34, 55);
   }
-  else if (dcl >= 100) {
-    u8g2.setCursor(36, 55);
-  }
-  else if (dcl >= 20) {
-    u8g2.setCursor(40, 55);
-  }
-  else if (dcl >= 10) {
-    u8g2.setCursor(42, 64);
+  u8g2.print(dcl); u8g2.print(" A");
+     
+  // Charge current limit
+  u8g2.drawStr(0, 64, "CHG"); 
+  if (ccl >= 0 && ccl < 10) { 
+    u8g2.setCursor(47, 64); 
+  } 
+  else if (ccl >= 10 && ccl < 20) { 
+    u8g2.setCursor(42, 64); 
+  } 
+  else if (ccl >= 20 && ccl < 100) { 
+    u8g2.setCursor(40, 64); 
   }
   else {
-    u8g2.setCursor(47, 55);
-  }
-
-  u8g2.print(dcl); u8g2.print(" A");
-
-  // Charge current limit
-  u8g2.drawStr(0, 64, "CHG");
-
-  if (ccl >= 100) {
     u8g2.setCursor(36, 64);
   }
-  else if (ccl >= 20) {
-    u8g2.setCursor(40, 64);
-  }
-  else if (ccl >= 10) {
-    u8g2.setCursor(42, 64);
-  }
-  else {
-    u8g2.setCursor(47, 64);
-  }
-
-  u8g2.print(ccl); u8g2.print(" A");
-
+  u8g2.print(ccl); u8g2.print(" A"); 
+  
   // Draw fault and bms status flags
   int x = 66;         // x position for flags
   int y = 0;          // variable y position for flags
   u8g2.drawStr(69, 5, "Flags");
 
-  // Flag No BMS CAN RX
-  if (len == 0) {
-    u8g2.drawStr(x - 1, 16 + y, "noCANrx");
-    y += 7;
-  }
   // Flag internal communication fault
   if (((fu & 0x0100) == 0x0100) && y <= 28) {
-    u8g2.drawStr(x, 16 + y, "intCom");
+    u8g2.drawStr(x, 16+y, "intCom");
     y += 7;
   }
   // Flag internal convertions fault
   if (((fu & 0x0200) == 0x0200) && y <= 28) {
-    u8g2.drawStr(x - 2, 16 + y, "intConv");
+    u8g2.drawStr(x-2, 16+y, "intConv");
     y += 7;
   }
   // Flag weak cell fault
@@ -732,7 +726,7 @@ void text() {
   }
   // Flag charge limit enforcement fault
   if (((fu & 0x0004) == 0x0004) && y <= 28) {
-    u8g2.drawStr(x-2, 16+y, "chgRly");
+    u8g2.drawStr(x, 16+y, "chgRly");
     y += 7;
   }
   // Flag discharge limit enforcement fault
@@ -780,93 +774,90 @@ void text() {
   }
 
   // Draw count
-  if ( ct > 199 ) {
-    u8g2.setCursor(105, 5);
+  if (ct < 10) {
+    u8g2.setCursor(111, 5);
   }
-  else if ( ct > 119 ) {
-    u8g2.setCursor(106, 5);
-  }
-  else if ( ct > 99 ) {
-    u8g2.setCursor(107, 5);
-  }
-  else if ( ct > 9 ) {
+  else if (ct >= 10 && ct < 100) {
     u8g2.setCursor(109, 5);
   }
+  else if (ct >= 100 && ct < 120) {
+    u8g2.setCursor(107, 5);
+  }
+  else if (ct >= 120 && ct < 200) {
+    u8g2.setCursor(106, 5);
+  }
   else {
-    u8g2.setCursor(111, 5);
+    u8g2.setCursor(105, 5);
   }
   u8g2.print(ct);
 
   // Draw total pack cycles
   u8g2.drawStr(100, 14, "Cycles");
-
-  if ( cc > 199 ) {
-    u8g2.setCursor(105, 24);
+  if (cc < 10) {
+    u8g2.setCursor(111, 24);
   }
-  else if ( cc > 119 ) {
-    u8g2.setCursor(106, 24);
-  }
-  else if ( cc > 99 ) {
-    u8g2.setCursor(107, 24);
-  }
-  else if ( cc > 9 ) {
+  else if (cc >= 10 && cc < 100) {
     u8g2.setCursor(109, 24);
   }
+  else if (cc >= 100 && cc < 120) {
+    u8g2.setCursor(107, 24);
+  }
+  else if (cc >= 120 && cc < 200) {
+    u8g2.setCursor(106, 24);
+  }
   else {
-    u8g2.setCursor(111, 24);
+    u8g2.setCursor(105, 24);
   }
   u8g2.print(cc);
 
   // Draw Ah 
   u8g2.drawStr(109, 35, "Ah");
-
-  if ( ah > 11195 ) {
-    u8g2.setCursor(103,44);
-  }
-  else if ( ah > 11094 ) {
-    u8g2.setCursor(106,  44);
-  }
-  else if ( ah > 999 ) {
-    u8g2.setCursor(105, 44);
-  }
-  else {
+  if (ah < 1000) {
     u8g2.setCursor(108, 44);
   }
-
-  u8g2.print(ah/100.0, 1);
+  if (ah >= 1000 && ah < 10000) { 
+    u8g2.setCursor(105, 44); 
+  } 
+  else if (ah > 11094 && ah < 11195) { 
+    u8g2.setCursor(106,  44); 
+  } 
+  else { 
+    u8g2.setCursor(103,44); 
+  } 
+  u8g2.print(ah/100.0, 1); 
 
   // Draws pack temp
-  u8g2.drawStr(66, 53, "TempH");
-  u8g2.drawStr(100, 53, "TempL");
+  u8g2.drawStr(66, 53, "TempH"); 
+  u8g2.drawStr(100, 53, "TempL"); 
   // Highest temperature
-  if (hT >= 0 && hT < 10) {
-    u8g2.setCursor(78, 64);
-  }
-  else if (hT >= 10) {
-    u8g2.setCursor(75, 64);
-  }
-  else if (hT < 0 && hT > -10) {
-    u8g2.setCursor(71, 64);
-  }
-  else {
-    u8g2.setCursor(68, 64);
-  }
-  u8g2.print(hT);
+  if (hT >= 0 && hT < 10) { 
+    u8g2.setCursor(78, 64); 
+  } 
+  else if (hT >= 10) { 
+    u8g2.setCursor(75, 64); 
+  } 
+  else if (hT < 0 && hT > -10) { 
+    u8g2.setCursor(71, 64); 
+  } 
+  else { 
+    u8g2.setCursor(68, 64); 
+  } 
+  u8g2.print(hT); 
   // Lowest temperature
-  if (lT >= 0 && lT < 10) {
-    u8g2.setCursor(112, 64);
-  }
-  else if (lT >= 10) {
-    u8g2.setCursor(109, 64);
-  }
-  else if (lT < 0 && lT > -10) {
-    u8g2.setCursor(105, 64);
-  }
-  else {
-    u8g2.setCursor(102, 64);
-  }
-  u8g2.print(lT);
-}
+  if (lT >= 0 && lT < 10) { 
+    u8g2.setCursor(112, 64); 
+  } 
+  else if (lT >= 10) { 
+    u8g2.setCursor(109, 64); 
+  } 
+  else if (lT < 0 && lT > -10) { 
+    u8g2.setCursor(105, 64); 
+  } 
+  else { 
+    u8g2.setCursor(102, 64); 
+  } 
+  u8g2.print(lT); 
+} 
 // -------------------------- loop -------------------------
 
 void loop() {
@@ -883,24 +874,24 @@ void loop() {
 
   // needle position calculations for amperage and voltage
   // 155 = zero position, 180 = just before middle, 0 = middle, 25 = max
-  needle_angle_va = mapped_angle;
+  va_angle = m;
   // position correction
-  if (needle_angle_va < 25){
-    needle_angle_va += 155;
+  if (va_angle < 25){
+    va_angle += 155;
   }
   else {
-    needle_angle_va -= 25;
+    va_angle -= 25;
   }
   
   // needle position calculations watt gauge
   // 135 = zero position, 180 = just before middle, 0 = middle, 45 = max
-  needle_angle_p = mapped_angle;
+  p_angle = m;
   // position correction
-  if (needle_angle_p < 45){
-    needle_angle_p += 135;
+  if (p_angle < 45){
+    p_angle += 135;
   }
   else {
-    needle_angle_p -= 45;
+    p_angle -= 45;
   }
 
   // Check the status of the button
@@ -918,6 +909,16 @@ void loop() {
   if (millis_held > 200) {
     if (buttonState == LOW && previous == HIGH) {
 
+      // Long push over 3 sec sends MPO signal to clear BMS faults ** needs to be connected with 10kOhm pull up resistor to BAT+ and MPI **
+      if (millis_held > 3000) {
+        CAN0.sendMsgBuf(0x32, 0, 8, mpo);
+      }
+      
+      /*// Long push over 2 sec sends MPE signal ** not yet assigned task **
+      else if (millis_held > 2000) {
+        CAN0.sendMsgBuf(0x32, 0, 8, mpe);
+      }*/
+      
       // Long push for 0,5 sec changes contrast
       if (millis_held >= 500) {
         if (c == 255) {
@@ -930,7 +931,7 @@ void loop() {
           c = 255;
         }
       }
-
+      
       // Short button press changes between pages
       else {
         if (hits < 5) {
@@ -947,27 +948,27 @@ void loop() {
 
   // Display voltage page
   if (hits == 1) {
-    u8g2.firstPage();
-    do {
-      voltage(needle_angle_va);
+    u8g2.firstPage(); 
+    do {             
+      voltage(va_angle);
     }
     while(u8g2.nextPage());
   }
   
   // Display amperage page
   else if (hits == 2) {
-    u8g2.firstPage();
-    do {
-      amperage(needle_angle_va);
+    u8g2.firstPage(); 
+    do {             
+      amperage(va_angle);
     }
     while(u8g2.nextPage());
   }
   
-  // Display gauge page
+  // Display power page
   else if (hits == 3) {
-    u8g2.firstPage();
-    do {
-      gauge(needle_angle_p);
+    u8g2.firstPage(); 
+    do {             
+      power(p_angle);
     }
     while(u8g2.nextPage());
   }

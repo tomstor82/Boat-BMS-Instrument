@@ -33,7 +33,7 @@
 //  21/05/25  Serial set to 115200. Reduced clock memory usage with only one string object. Changed weak cell to not use char array but print low og high cell number directly to save memory.
 //  04/06/25  Merged cabin v2 (working) with added CAN send feature to clear BMS faults. Added STATION macro to unify helm and cabin.
 //
-//  Sketch 23944 bytes (26698 02/01/25) now 25798 bytes
+//  Sketch 25772 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone

@@ -31,9 +31,10 @@
 //  01/10/19  Changed abbreviatons on BMS status messages to easier understand their meaning.
 //  02/01/25  Removed code repeats in clock statements. Added "hrs" plural condition and associated string, and arithmetic expression for hrs above 120 displayed as days.
 //  21/05/25  Serial set to 115200. Reduced clock memory usage with only one string object. Changed weak cell to not use char array but print low og high cell number directly to save memory.
-//  04/06/25  Merged cabin v2 (working) with added CAN send feature to clear BMS faults. Added STATION macro to unify helm and cabin. Changed va_angle and p_angle from u8g2_uint_t data type
+//  04/06/25  Merged cabin v2 (working) with added CAN send feature to clear BMS faults.
+//  14/06/25  Modified min high cell bars algo as resolution was changed from 0,001 to 0,01 in BMS. Replaced int types for byte in bars
 //
-//  Sketch 25724 bytes
+//  Sketch 23944 bytes (26698 02/01/25) now 25798 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -53,45 +54,41 @@ U8G2_SH1106_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 #define CAN0_INT 9                              // Set INT to pin 9
 MCP_CAN CAN0(10);                               // Set CS to pin 10
 
-//  CANBUS RX
+//  MCP_CAN DATA
 long unsigned int rxId;     // Stores 4 bytes 32 bits
 unsigned char len = 0;      // Stores at least 1 byte
 unsigned char rxBuf[8];     // Stores 8 bytes, 1 character  = 1 byte
 
-//  CANBUS TX
+//  MCP_CAN SEND DATA
 byte mpo[8] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Multi-purpose output activation signal
 /*byte mpe[8] = {0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};*/ // Multi-purpose enable activation signal
 
-//  CANBUS RX data Identifier List
+//  CANBUS data Identifier List
 //  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC **** ABS_AMP from OrionJr errendous ****
 //  ID 0x6B2 BYT0+1:LOW_CELL BYT2+3:HIGH_CELL BYT4:HEALTH BYT5+6:CYCLES
 //  ID 0x0A9 BYT0:RELAY_STATE BYT1:CCL BYT2:DCL BYT3+4:PACK_AH BYT5+6:AVG_AMP
 //  ID 0x0BD BYT0+1:CUSTOM_FLAGS BYT2:HI_TMP BYT3:LO_TMP BYT4:COUNTER BYT5:BMS_STATUS
 
-#define XMAX 128              // Display width
-#define YMAX 64               // Display height
-#define BUTTON_PIN 2          // Button pin number
-#define STATION 1             // Set 1 for cabin or 3 for helm
-
 //  Variables
-uint16_t rawU = 0;            // Voltage - multiplied by 10
-int16_t rawI = 0;             // Current - multiplied by 10 - negative value indicates charge
+unsigned int rawU = 0;        // Voltage - multiplied by 10
+int rawI = 0;                 // Current - multiplied by 10 - negative value indicates charge
 byte soc = 0;                 // State of charge - multiplied by 2
 byte wrench = 0;              // Wrench icon variable
 byte angle = 0;               // Needle angle
-uint16_t p = 0;               // Watt reading
-byte m = 0;                   // Mapped values to fit needle
-byte va_angle = 0;            // 8 bit unsigned int amperage and voltage needle angle
-byte p_angle = 0;             // 8 bit unsigned int watt needle angle
-byte c = 180;                 // 8 bit unsigned integer range from 0-255 (low - high contrast)
+unsigned int p;               // Watt reading
+uint8_t m = 0;                // Mapped values to fit needle
+u8g2_uint_t va_angle = 0;     // 8 bit unsigned int amperage and voltage needle angle
+u8g2_uint_t p_angle = 0;      // 8 bit unsigned int watt needle angle
+uint8_t c = 180;              // 8 bit unsigned integer range from 0-255 (low - high contrast)
 
 //  Button settings
-long millis_held;             // 4 byte variable for storing duration button is held down
-unsigned long firstTime;      // 4 byte variable for storing time button is first pushed
-byte previous = HIGH;         // Pin state before pushing or releasing button ** NOTE: Bool uses more memory as it takes up at least 1 byte
-byte buttonState;             // Variable for button pushed or not
-byte hits = STATION - 1;      // For some reason on startup it starts on page 2 if not
-
+const int buttonPin = 2;            // Pin assigned for button
+long button_held_ms = 0;            // 4 byte variable for storing duration button is held down
+unsigned long button_touch_ms = 0;  // 4 byte variable for storing time button is first pushed
+byte button_previous_state = HIGH;  // Pin state before pushing or releasing button
+byte button_state = LOW;            // Variable for button pushed or not
+byte hits = 0;                      // Initialised as 0 to start on correct page as startup registeres as a short button press
+#define STATION 3                   // 1 for cabin position 3 for helm
 // ------------------------ setup ------------------------------
 
 void setup() {
@@ -114,13 +111,13 @@ void setup() {
 }
 // -------------------- set contrast -----------------------------
 
-void contrast(byte c) {
+void contrast(uint8_t c) {
   u8g2.setContrast(c);
 }
 
 // -------------------- amperage display * 2 bytes from rxBuf -------------------------
 
-void amperage(byte angle) {
+void amperage(uint8_t angle) {
 
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
@@ -145,7 +142,9 @@ void amperage(byte angle) {
   }
 
   // Display dimensions
-  byte xcenter = XMAX/2;
+  byte xmax = 128;
+  byte ymax = 64;
+  byte xcenter = xmax/2;
   byte ycenter = 80;
   byte arc = 64;
 
@@ -168,8 +167,8 @@ void amperage(byte angle) {
   float x1 = sin(2*angle*2*3.14/360);
   float y1 = cos(2*angle*2*3.14/360); 
   u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
-  u8g2.drawDisc(xcenter, YMAX+10, 20, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawDisc(xcenter, YMAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_RIGHT);
 
   // Draw 3 different scale labels
   u8g2.setFont(u8g2_font_chikita_tf);
@@ -208,7 +207,7 @@ void amperage(byte angle) {
 
 // --------------------- volt display * 2 bytes from rxBuf-----------------------
 
-void voltage(byte angle) {
+void voltage(uint8_t angle) {
 
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
@@ -218,7 +217,9 @@ void voltage(byte angle) {
   m = map(rawU, 440,640,0,50);
 
   // Display dimensions
-  byte xcenter = XMAX/2;
+  byte xmax = 128;
+  byte ymax = 64;
+  byte xcenter = xmax/2;
   byte ycenter = 80;
   byte arc = 64;
 
@@ -258,8 +259,8 @@ void voltage(byte angle) {
   float x1 = sin(2*angle*2*3.14/360);
   float y1 = cos(2*angle*2*3.14/360); 
   u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
-  u8g2.drawDisc(xcenter, YMAX+10, 20, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawDisc(xcenter, YMAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_RIGHT);
   // Draw scale labels
   u8g2.drawStr(0, 29, "44"); 
   u8g2.drawStr(24, 11, "49");                  
@@ -274,7 +275,7 @@ void voltage(byte angle) {
 
 // --------------------- power display * 11 bytes from rxBuf ----------------------
 
-void power(byte angle) {
+void power(uint8_t angle) {
 
   // Fault messages & status from CANBus for displaying wrench icon
   int fs;
@@ -304,9 +305,11 @@ void power(byte angle) {
   p = (abs(rawI)*rawU)/100.0;
   
   // Display dimensions
-  byte xcenter = XMAX/2;
-  byte ycenter = YMAX/2+10;
-  byte arc = YMAX/2;
+  byte xmax = 128;
+  byte ymax = 64;
+  byte xcenter = xmax/2;
+  byte ycenter = ymax/2+10;
+  byte arc = ymax/2;
 
   // Draw border of the gauge
   u8g2.drawCircle(xcenter, ycenter, arc+6, U8G2_DRAW_UPPER_RIGHT);
@@ -388,7 +391,7 @@ void power(byte angle) {
   
   // Draw clock
   uint16_t h;
-  byte m;
+  uint8_t m;
   const char time_str[10];
   // Discharge
   if (avgI > 0) {
@@ -401,7 +404,10 @@ void power(byte angle) {
     m = ((200 - soc) / (abs(avgI)/10.0) - h) * 60;
   }
   // Adjust x-positon
-  if (h > 99 && h <= 120 || h >= 240) { // AND has higher precedence than OR so essentially this is "(h>99 && h<=120) || h>=240"
+  if (h > 120) { // days
+    u8g2.setCursor(94, 5);
+  }
+  else if (h > 99) {
     u8g2.setCursor(84, 5);
   }
   else {
@@ -410,7 +416,7 @@ void power(byte angle) {
 
   // Set days if above 120 hrs
   if (h > 120) {
-    byte d = 24 / h;
+    uint8_t d = h / 24;
     // Generate string
     sprintf(time_str, "%d days", d);
   }
@@ -433,9 +439,9 @@ void power(byte angle) {
 void bars() {
   
   // Variables from CANBus
-  uint16_t hC;      // High Cell Voltage in 0,0001V
-  uint16_t lC;      // Low Cell Voltage in 0,0001V
-  byte h;           // Health *was int
+  int hC;        // High Cell Voltage in 0,01V
+  int lC;        // Low Cell Voltage in 0,01V
+  byte h;        // Health
   
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
@@ -449,37 +455,36 @@ void bars() {
   }
 
   // Draw pack volt bar
-  int pV = ((rawU/10.0-43.2)*2.083); // Box length 35/16.8 (volt difference max to min)
+  byte pV = ((rawU/10.0-43.2)*2.083); // Box length 35/16.8 (volt difference max to min)
   u8g2.setCursor(2, 5);
-  u8g2.print(rawU/10.0, 1); // One decimal
+  u8g2.print(rawU / 10.0, 1); // One decimal
   u8g2.drawStr(1, 56, "Pack");
   u8g2.drawStr(2, 63, "Volt");
   u8g2.drawFrame(5, 8, 11, 38);
   u8g2.drawBox(7, 44-pV, 7, pV);
   
   // Draw Min and Max cell voltage bars
-  int hCb = ((hC/1000.00)-2.7)*26.9;
-  int lCb = ((lC/1000.00)-2.7)*26.9;
+  byte hCb = (hC - 270) * 0.34;
+  byte lCb = (lC - 270) * 0.34;
   u8g2.setCursor(28, 5);
-  u8g2.print(hC/1000.00, 2); // Two decimals
+  u8g2.print(hC / 100.0, 2); // Two decimals
   u8g2.drawStr(28, 56, "High");
   u8g2.drawStr(29, 63, "Cell");
   u8g2.drawFrame(31, 8, 11, 38);
-  if (hC <= 4000 && hC >= 2700) {
+  if (hC <= 400 && hC >= 270) {
     u8g2.drawBox(33, 44-hCb, 7, hCb);
   }
   u8g2.setCursor(54, 5);
-  u8g2.print(lC/1000.00, 2);  // Two decimals
+  u8g2.print(lC / 100.0, 2);  // Two decimals
   u8g2.drawStr(54, 56, "Low");
   u8g2.drawStr(55, 63, "Cell");
   u8g2.drawFrame(57, 8, 11, 38);
-  if (lC <= 4000 && lC >= 2700) {
+  if (lC <= 400 && lC >= 270) {
     u8g2.drawBox(59, 44-lCb, 7, lCb);
   }
   
   // Draw health bar
-  
-  int hBar = h*0.34;
+  byte hBar = h * 0.34;
   if (h >= 0 && h <= 9) {
     u8g2.setCursor(88, 5);  // Shift position at and above 0%
   }
@@ -495,7 +500,7 @@ void bars() {
   }
   
   // Draw ampere bar
-  float aBar = abs(rawI)*0.0137;
+  byte aBar = abs(rawI)*0.0137;
   if (rawI >= 0 && rawI <= 90) {               // Shift position at and above 0A
     u8g2.setCursor(111, 5);
   }
@@ -544,7 +549,7 @@ void bars() {
 
 void text() {
 
-  // Variables from CANBus ** NOTE: Setting Static cause crash and initialising variables as 0 makes bar graphs flap
+  // Variables from CANBus
   uint16_t fu;            // BMS faults
   byte hT;                // Highest cell temperature *was int
   byte lT;                // Lowest cell temperature * was int
@@ -574,7 +579,8 @@ void text() {
     lT = rxBuf[3];
     ct = rxBuf[4];
     st = rxBuf[5];
-    wrench = (rxBuf[0] + rxBuf[1] + rxBuf[5]);    // Saves fault & status to "wrench" after reviewing text page
+    // Saves fault & status to "wrench" after reviewing text page
+    wrench = (rxBuf[0] + rxBuf[1] + rxBuf[5]);
   }
   if (rxId == 0x0BE ) {
     hCid = rxBuf[0];
@@ -895,32 +901,33 @@ void loop() {
   }
 
   // Check the status of the button
-  buttonState = digitalRead(BUTTON_PIN);
+  button_state = digitalRead(buttonPin);
 
-  // How long is the button held down
-  if (buttonState == HIGH && previous == LOW) {
-    firstTime = millis();
+  // Button pressed
+  if (button_state == HIGH && button_previous_state == LOW) {
+    button_touch_ms = millis();
   }
-  if (buttonState == LOW && previous == HIGH) {
-    millis_held = millis() - firstTime;
+  // Button released
+  if (button_state == LOW && button_previous_state == HIGH) {
+    button_held_ms = millis() - button_touch_ms;
   }
 
   // Require more than 200ms push to qualify as a button "hit"
-  if (millis_held > 200) {
-    if (buttonState == LOW && previous == HIGH) {
+  if (button_held_ms > 200) {
+    if (button_state == LOW && button_previous_state == HIGH) {
 
       // Long push over 3 sec sends MPO signal to clear BMS faults ** needs to be connected with 10kOhm pull up resistor to BAT+ and MPI **
-      if (millis_held > 3000) {
+      if (button_held_ms > 3000) {
         CAN0.sendMsgBuf(0x32, 0, 8, mpo);
       }
       
       /*// Long push over 2 sec sends MPE signal ** not yet assigned task **
-      else if (millis_held > 2000) {
+      else if (button_held_ms > 2000) {
         CAN0.sendMsgBuf(0x32, 0, 8, mpe);
       }*/
       
       // Long push for 0,5 sec changes contrast
-      if (millis_held >= 500) {
+      if (button_held_ms >= 500) {
         if (c == 255) {
           c = 100;
         }
@@ -943,7 +950,7 @@ void loop() {
       }
     }
     // Save button state
-    previous = buttonState;
+    button_previous_state = button_state;
   }
 
   // Display voltage page

@@ -54,12 +54,18 @@ U8G2_SH1106_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 #define CAN0_INT 9                              // Set INT to pin 9
 MCP_CAN CAN0(10);                               // Set CS to pin 10
 
-//  MCP_CAN DATA
+// MACROS
+#define BUTTON_PIN 2
+#define X_MAX 128           // Display size
+#define Y_MAX 64
+#define STATION 3           // 1 for cabin position 3 for helm
+
+//  CANBUS RX
 long unsigned int rxId;     // Stores 4 bytes 32 bits
 unsigned char len = 0;      // Stores at least 1 byte
 unsigned char rxBuf[8];     // Stores 8 bytes, 1 character  = 1 byte
 
-//  MCP_CAN SEND DATA
+//  CANBUS TX
 byte mpo[8] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Multi-purpose output activation signal
 /*byte mpe[8] = {0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};*/ // Multi-purpose enable activation signal
 
@@ -82,13 +88,12 @@ u8g2_uint_t p_angle = 0;      // 8 bit unsigned int watt needle angle
 uint8_t c = 180;              // 8 bit unsigned integer range from 0-255 (low - high contrast)
 
 //  Button settings
-const int buttonPin = 2;            // Pin assigned for button
 long button_held_ms = 0;            // 4 byte variable for storing duration button is held down
 unsigned long button_touch_ms = 0;  // 4 byte variable for storing time button is first pushed
 byte button_previous_state = HIGH;  // Pin state before pushing or releasing button
 byte button_state = LOW;            // Variable for button pushed or not
 byte hits = 0;                      // Initialised as 0 to start on correct page as startup registeres as a short button press
-#define STATION 3                   // 1 for cabin position 3 for helm
+
 // ------------------------ setup ------------------------------
 
 void setup() {
@@ -142,9 +147,7 @@ void amperage(uint8_t angle) {
   }
 
   // Display dimensions
-  byte xmax = 128;
-  byte ymax = 64;
-  byte xcenter = xmax/2;
+  byte xcenter = X_MAX/2;
   byte ycenter = 80;
   byte arc = 64;
 
@@ -167,8 +170,8 @@ void amperage(uint8_t angle) {
   float x1 = sin(2*angle*2*3.14/360);
   float y1 = cos(2*angle*2*3.14/360); 
   u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
-  u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
 
   // Draw 3 different scale labels
   u8g2.setFont(u8g2_font_chikita_tf);
@@ -217,9 +220,7 @@ void voltage(uint8_t angle) {
   m = map(rawU, 440,640,0,50);
 
   // Display dimensions
-  byte xmax = 128;
-  byte ymax = 64;
-  byte xcenter = xmax/2;
+  byte xcenter = X_MAX/2;
   byte ycenter = 80;
   byte arc = 64;
 
@@ -259,8 +260,8 @@ void voltage(uint8_t angle) {
   float x1 = sin(2*angle*2*3.14/360);
   float y1 = cos(2*angle*2*3.14/360); 
   u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
-  u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawDisc(xcenter, ymax+10, 20, U8G2_DRAW_UPPER_RIGHT);
+  u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
   // Draw scale labels
   u8g2.drawStr(0, 29, "44"); 
   u8g2.drawStr(24, 11, "49");                  
@@ -305,11 +306,9 @@ void power(uint8_t angle) {
   p = (abs(rawI)*rawU)/100.0;
   
   // Display dimensions
-  byte xmax = 128;
-  byte ymax = 64;
-  byte xcenter = xmax/2;
-  byte ycenter = ymax/2+10;
-  byte arc = ymax/2;
+  byte xcenter = X_MAX/2;
+  byte ycenter = Y_MAX/2+10;
+  byte arc = Y_MAX/2;
 
   // Draw border of the gauge
   u8g2.drawCircle(xcenter, ycenter, arc+6, U8G2_DRAW_UPPER_RIGHT);
@@ -358,21 +357,22 @@ void power(uint8_t angle) {
   }
   u8g2.print(p);
   
-  // Draw lightening bolt when charge current above 20A and charge safety relay is closed
-  if (rawI < -200 && (ry & 0b00000100) == 0b00000100) {
-    u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
-    u8g2.drawGlyph(4, 40, 67);
-  }
   // Draw sun when charge current is above 0A and charge relay is closed and charge safety relay is open or above 30A charge and charge safety relay closed
-  if (avgI < 0 && (ry & 0b00000010) == 0b00000010 && (ry & 0b00000100) != 0b00000100 || avgI < -300 && (ry & 0b00000010) == 0b00000010 && (ry & 0b00000100) == 0b00000100) {
+  if (avgI < 0 && (ry & 0x02) == 0x02 && (ry & 0x04) != 0x04 || avgI < -300 && (ry & 0x02) == 0x02 && (ry & 0x04) == 0x04) {
     u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
     u8g2.drawGlyph(4, 39, 69);
   }
+  // Draw lightening bolt when charge current above 20A and charge safety relay is closed
+  else if (rawI < -200 && (ry & 0x04) == 0x04) {
+    u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
+    u8g2.drawGlyph(4, 40, 67);
+  }
   // Draw warning symbol at and below 20% State of Charge if charge safety relay is open
-  if (soc <= 40 && (ry & 0b00000100) != 0b00000100) {   // soc from canbus is multiplied by 2
+  else if (soc <= 40 && (ry & 0x04) != 0x04) {   // soc from canbus is multiplied by 2
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 39, 71);
   }
+
   // Draw wrench icon if BMS flags hvoltamp_anglee not been seen
   if (fs != wrench) {
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
@@ -604,7 +604,7 @@ void text() {
   u8g2.drawStr(0, 5, "Relay Status");
   u8g2.drawStr(0, 16, "Discharge");
   u8g2.setFont(u8g2_font_open_iconic_check_1x_t);
-  if ((ry & 0b00000001) == 0b00000001) {
+  if ((ry & 0x01) == 0x01) {
     u8g2.drawGlyph(52, 18, 64);
   }
   else {
@@ -613,7 +613,7 @@ void text() {
   u8g2.setFont(u8g2_font_chikita_tf);
   u8g2.drawStr(0, 25, "Charge");
   u8g2.setFont(u8g2_font_open_iconic_check_1x_t);
-  if ((ry & 0b00000010) == 0b00000010) {
+  if ((ry & 0x02) == 0x02) {
     u8g2.drawGlyph(52, 27, 64);
   }
   else {
@@ -622,7 +622,7 @@ void text() {
   u8g2.setFont(u8g2_font_chikita_tf);
   u8g2.drawStr(0, 34, "Chg Safety");
   u8g2.setFont(u8g2_font_open_iconic_check_1x_t);
-  if ((ry & 0b00000100) == 0b00000100) {
+  if ((ry & 0x04) == 0x04) {
     u8g2.drawGlyph(52, 36, 64);
   }
   else {
@@ -901,7 +901,7 @@ void loop() {
   }
 
   // Check the status of the button
-  button_state = digitalRead(buttonPin);
+  button_state = digitalRead(BUTTON_PIN);
 
   // Button pressed
   if (button_state == HIGH && button_previous_state == LOW) {

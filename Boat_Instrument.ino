@@ -33,41 +33,34 @@
 //  21/05/25  Serial set to 115200. Reduced clock memory usage with only one string object. Changed weak cell to not use char array but print low og high cell number directly to save memory.
 //  04/06/25  Merged cabin v2 (working) with added CAN send feature to clear BMS faults.
 //  14/06/25  Modified min high cell bars algo as resolution was changed from 0,001 to 0,01 in BMS. Replaced int types for byte in bars
+//  18/06/25  Added pre-computed SCALE_FACTOR macro for radians and angle compensation to reduce the floating point calculations. Added hits to be 5 for text screen to be shown as it would always show if hits were not 1/3 - 5
 //
-//  Sketch 23944 bytes (26698 02/01/25) now 25798 bytes
+//  Sketch 25736 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
 //  SH1106 128x64 OLED
 //  MCP2515 TJ1A050 CANBus Transeiver
-//  Pushbutton and 10kOhm resistor (pull down)
+//  Pushbutton and 10kOhm pull-down resistor (At the time I was unaware of the boards internal pull-up resistor)
 
 #include <U8g2lib.h>
 #include <mcp_can.h>
-#include <SPI.h>    // SPI library CANBUS
-#include <Wire.h>   // I2C library OLED
+#include <SPI.h>                    // SPI library CANBUS
+#include <Wire.h>                   // I2C library OLED
 
 //  OLED library driver
 U8G2_SH1106_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 //  CANBUS Shield pins
-#define CAN0_INT 9                              // Set INT to pin 9
-MCP_CAN CAN0(10);                               // Set CS to pin 10
+#define CAN0_INT 9                  // Set INT to pin 9
+MCP_CAN CAN0(10);                   // Set CS to pin 10
 
 // MACROS
 #define BUTTON_PIN 2
-#define X_MAX 128           // Display size
+#define X_MAX 128                   // Display size
 #define Y_MAX 64
-#define STATION 3           // 1 for cabin position 3 for helm
-
-//  CANBUS RX
-long unsigned int rxId;     // Stores 4 bytes 32 bits
-unsigned char len = 0;      // Stores at least 1 byte
-unsigned char rxBuf[8];     // Stores 8 bytes, 1 character  = 1 byte
-
-//  CANBUS TX
-byte mpo[8] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Multi-purpose output activation signal
-/*byte mpe[8] = {0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};*/ // Multi-purpose enable activation signal
+#define SCALE_FACTOR (4 * PI / 360) // Radian computation multiplied by 2 for the needle movement being 90 instead of 180 degrees to make it work with trigonometry
+#define STATION 3                   // 1 for cabin position 3 for helm
 
 //  CANBUS data Identifier List
 //  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC **** ABS_AMP from OrionJr errendous ****
@@ -75,17 +68,26 @@ byte mpo[8] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Multi-purpose
 //  ID 0x0A9 BYT0:RELAY_STATE BYT1:CCL BYT2:DCL BYT3+4:PACK_AH BYT5+6:AVG_AMP
 //  ID 0x0BD BYT0+1:CUSTOM_FLAGS BYT2:HI_TMP BYT3:LO_TMP BYT4:COUNTER BYT5:BMS_STATUS
 
+//  CANBUS RX
+long unsigned int rxId;             // Stores 4 bytes 32 bits
+unsigned char len = 0;              // Stores at least 1 byte
+unsigned char rxBuf[8];             // Stores 8 bytes, 1 character  = 1 byte
+
+//  CANBUS TX
+byte mpo[8] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Multi-purpose output activation signal
+/*byte mpe[8] = {0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};*/ // Multi-purpose enable activation signal
+
 //  Variables
-unsigned int rawU = 0;        // Voltage - multiplied by 10
-int rawI = 0;                 // Current - multiplied by 10 - negative value indicates charge
-byte soc = 0;                 // State of charge - multiplied by 2
-byte wrench = 0;              // Wrench icon variable
-byte angle = 0;               // Needle angle
-unsigned int p;               // Watt reading
-uint8_t m = 0;                // Mapped values to fit needle
-u8g2_uint_t va_angle = 0;     // 8 bit unsigned int amperage and voltage needle angle
-u8g2_uint_t p_angle = 0;      // 8 bit unsigned int watt needle angle
-uint8_t c = 180;              // 8 bit unsigned integer range from 0-255 (low - high contrast)
+unsigned int rawU = 0;              // Voltage - multiplied by 10
+int rawI = 0;                       // Current - multiplied by 10 - negative value indicates charge
+byte soc = 0;                       // State of charge - multiplied by 2
+byte wrench = 0;                    // Wrench icon variable
+byte angle = 0;                     // Needle angle
+unsigned int p;                     // Watt reading
+byte m = 0;                         // Mapped values to fit needle
+u8g2_uint_t va_angle = 0;           // 8 bit unsigned int amperage and voltage needle angle
+u8g2_uint_t p_angle = 0;            // 8 bit unsigned int watt needle angle
+byte c = 180;                       // 8 bit unsigned integer range from 0-255 (low - high contrast)
 
 //  Button settings
 long button_held_ms = 0;            // 4 byte variable for storing duration button is held down
@@ -116,13 +118,13 @@ void setup() {
 }
 // -------------------- set contrast -----------------------------
 
-void contrast(uint8_t c) {
+void contrast(byte c) {
   u8g2.setContrast(c);
 }
 
 // -------------------- amperage display * 2 bytes from rxBuf -------------------------
 
-void amperage(uint8_t angle) {
+void amperage(byte angle) {
 
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
@@ -167,8 +169,8 @@ void amperage(uint8_t angle) {
   
     
   // Draw the needle and disc
-  float x1 = sin(2*angle*2*3.14/360);
-  float y1 = cos(2*angle*2*3.14/360); 
+  float x1 = sin(angle * SCALE_FACTOR);
+  float y1 = cos(angle * SCALE_FACTOR); 
   u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
   u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
@@ -210,7 +212,7 @@ void amperage(uint8_t angle) {
 
 // --------------------- volt display * 2 bytes from rxBuf-----------------------
 
-void voltage(uint8_t angle) {
+void voltage(byte angle) {
 
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
@@ -257,8 +259,8 @@ void voltage(uint8_t angle) {
   u8g2.drawLine(93, 18, 98, 20);
   
   // Draw the needle and disc
-  float x1 = sin(2*angle*2*3.14/360);
-  float y1 = cos(2*angle*2*3.14/360); 
+  float x1 = sin(angle * SCALE_FACTOR);
+  float y1 = cos(angle * SCALE_FACTOR); 
   u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
   u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
@@ -276,7 +278,7 @@ void voltage(uint8_t angle) {
 
 // --------------------- power display * 11 bytes from rxBuf ----------------------
 
-void power(uint8_t angle) {
+void power(byte angle) {
 
   // Fault messages & status from CANBus for displaying wrench icon
   int fs;
@@ -317,8 +319,8 @@ void power(uint8_t angle) {
   u8g2.drawCircle(xcenter, ycenter, arc+4, U8G2_DRAW_UPPER_LEFT);
 
   // Draw the needle
-  float x1 = sin(2*angle*2*3.14/360);
-  float y1 = cos(2*angle*2*3.14/360); 
+  float x1 = sin(angle * SCALE_FACTOR);
+  float y1 = cos(angle * SCALE_FACTOR); 
   u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
   u8g2.drawDisc(xcenter, ycenter, 5, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(xcenter, ycenter, 5, U8G2_DRAW_UPPER_RIGHT);
@@ -391,7 +393,7 @@ void power(uint8_t angle) {
   
   // Draw clock
   uint16_t h;
-  uint8_t m;
+  byte m;
   const char time_str[10];
   // Discharge
   if (avgI > 0) {
@@ -416,7 +418,7 @@ void power(uint8_t angle) {
 
   // Set days if above 120 hrs
   if (h > 120) {
-    uint8_t d = h / 24;
+    byte d = h / 24;
     // Generate string
     sprintf(time_str, "%d days", d);
   }
@@ -942,7 +944,7 @@ void loop() {
       // Short button press changes between pages
       else {
         if (hits < 5) {
-          hits += 1;  // adds 1 to hits
+          hits++;
         }
         else {
           hits = STATION;
@@ -990,7 +992,7 @@ void loop() {
   }
 
   // Display text page
-  else {
+  else if (hits == 5) {
     u8g2.firstPage();
     do {
       text();

@@ -33,9 +33,11 @@
 //  21/05/25  Serial set to 115200. Reduced clock memory usage with only one string object. Changed weak cell to not use char array but print low og high cell number directly to save memory.
 //  04/06/25  Merged cabin v2 (working) with added CAN send feature to clear BMS faults.
 //  14/06/25  Modified min high cell bars algo as resolution was changed from 0,001 to 0,01 in BMS. Replaced int types for byte in bars
-//  18/06/25  Added pre-computed SCALE_FACTOR macro for radians and angle compensation to reduce the floating point calculations. Added hits to be 5 for text screen to be shown as it would always show if hits were not 1/3 - 5
+//  18/06/25  Added pre-computed SCALING_RADIANS macro for radians and angle compensation to reduce the floating point calculations. Added hits to be 5 for text screen to be shown as it would always show if hits were not 1/3 - 5
+//  19/06/25  Simplified degree to radian computations by utilising macro and replacing 2 * PI / 360 for PI / 180
+//  22/06/25  Set Power page as else to show it if either no hits or 3 detected.
 //
-//  Sketch 25736 bytes
+//  Sketch 25684 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -57,10 +59,10 @@ MCP_CAN CAN0(10);                   // Set CS to pin 10
 
 // MACROS
 #define BUTTON_PIN 2
-#define X_MAX 128                   // Display size
+#define X_MAX 128                           // Display size
 #define Y_MAX 64
-#define SCALE_FACTOR (4 * PI / 360) // Radian computation multiplied by 2 for the needle movement being 90 instead of 180 degrees to make it work with trigonometry
-#define STATION 3                   // 1 for cabin position 3 for helm
+#define SCALING_RADIANS (2 * PI / 180)      // As angles are half values we need to multiply by 2 before converting degrees to radians
+#define STATION 3                           // 1 for cabin position 3 for helm
 
 //  CANBUS data Identifier List
 //  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC **** ABS_AMP from OrionJr errendous ****
@@ -82,19 +84,19 @@ unsigned int rawU = 0;              // Voltage - multiplied by 10
 int rawI = 0;                       // Current - multiplied by 10 - negative value indicates charge
 byte soc = 0;                       // State of charge - multiplied by 2
 byte wrench = 0;                    // Wrench icon variable
-byte angle = 0;                     // Needle angle
 unsigned int p;                     // Watt reading
-byte m = 0;                         // Mapped values to fit needle
-u8g2_uint_t va_angle = 0;           // 8 bit unsigned int amperage and voltage needle angle
-u8g2_uint_t p_angle = 0;            // 8 bit unsigned int watt needle angle
 byte c = 180;                       // 8 bit unsigned integer range from 0-255 (low - high contrast)
+
+byte m = 0;
+byte va_angle = 0;
+byte p_angle = 0;
 
 //  Button settings
 long button_held_ms = 0;            // 4 byte variable for storing duration button is held down
 unsigned long button_touch_ms = 0;  // 4 byte variable for storing time button is first pushed
 byte button_previous_state = HIGH;  // Pin state before pushing or releasing button
 byte button_state = LOW;            // Variable for button pushed or not
-byte hits = 0;                      // Initialised as 0 to start on correct page as startup registeres as a short button press
+byte hits = STATION;            // Initialised as 0 to start on correct page as startup registeres as a short button press
 
 // ------------------------ setup ------------------------------
 
@@ -131,25 +133,25 @@ void amperage(byte angle) {
     rawI = ((rxBuf[2] << 8) + rxBuf[3]);
   }
 
-  // Map various amp readings to between 0-50. 0 = discharge 50 = charge
+  // Map various amp readings to between 0 - 100 degrees. 0 = discharge 50 = charge
   if (rawI > 1000 || rawI < -1000) {
-    m = map(rawI,-2500,2500,50,0);
+    m = map(rawI, -2500, 2500, 50, 0);
   }
   else if (rawI > 500 || rawI < -500) {
-    m = map(rawI,-1000,1000,50,0);
+    m = map(rawI, -1000, 1000, 50, 0);
   }
   else if (rawI > 100 || rawI < -100) {
-    m = map(rawI, -500,500,50,0);
+    m = map(rawI, -500, 500, 50, 0);
   }
   else  if (rawI > 50 || rawI < -50) {
-    m = map(rawI, -100,100,50,0);
+    m = map(rawI, -100, 100, 50, 0);
   }
   else {
-    m = map(rawI,-50,50,50,0);
+    m = map(rawI, -50, 50, 50, 0);
   }
 
   // Display dimensions
-  byte xcenter = X_MAX/2;
+  byte xcenter = X_MAX / 2;
   byte ycenter = 80;
   byte arc = 64;
 
@@ -169,9 +171,9 @@ void amperage(byte angle) {
   
     
   // Draw the needle and disc
-  float x1 = sin(angle * SCALE_FACTOR);
-  float y1 = cos(angle * SCALE_FACTOR); 
-  u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
+  float x1 = sin(angle * SCALING_RADIANS);
+  float y1 = cos(angle * SCALING_RADIANS);
+  u8g2.drawLine(xcenter, ycenter, xcenter + x1 * arc, ycenter - y1 * arc);
   u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
 
@@ -218,8 +220,8 @@ void voltage(byte angle) {
   if(rxId == 0x03B) {
     rawU = ((rxBuf[0] << 8) + rxBuf[1]);  
   }
-  // Map voltage from 44,0V - 64,0V between 0 - 50
-  m = map(rawU, 440,640,0,50);
+  // Map voltage from 44,0V - 64,0V between 0 - 50 degrees
+  m = map(rawU, 440, 640, 0, 50);
 
   // Display dimensions
   byte xcenter = X_MAX/2;
@@ -259,9 +261,9 @@ void voltage(byte angle) {
   u8g2.drawLine(93, 18, 98, 20);
   
   // Draw the needle and disc
-  float x1 = sin(angle * SCALE_FACTOR);
-  float y1 = cos(angle * SCALE_FACTOR); 
-  u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
+  float x1 = sin(angle * SCALING_RADIANS);
+  float y1 = cos(angle * SCALING_RADIANS);
+  u8g2.drawLine(xcenter, ycenter, xcenter + x1 * arc, ycenter - y1 * arc);
   u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
   // Draw scale labels
@@ -301,8 +303,8 @@ void power(byte angle) {
     avgI = ((rxBuf[5] << 8) + rxBuf[6]);
   }
 
-  // Map watt readings 0-10000 to between 0-90
-  m = map(p,0,10000,0,90);
+  // Map watt readings 0-10000 to between 0 - 90 degrees
+  m = map(p, 0, 10000, 0, 90);
 
   // Watt calculation
   p = (abs(rawI)*rawU)/100.0;
@@ -319,9 +321,9 @@ void power(byte angle) {
   u8g2.drawCircle(xcenter, ycenter, arc+4, U8G2_DRAW_UPPER_LEFT);
 
   // Draw the needle
-  float x1 = sin(angle * SCALE_FACTOR);
-  float y1 = cos(angle * SCALE_FACTOR); 
-  u8g2.drawLine(xcenter, ycenter, xcenter+arc*x1, ycenter-arc*y1);
+  float x1 = sin(angle * SCALING_RADIANS);
+  float y1 = cos(angle * SCALING_RADIANS);
+  u8g2.drawLine(xcenter, ycenter, xcenter + x1 * arc, ycenter - y1 * arc);
   u8g2.drawDisc(xcenter, ycenter, 5, U8G2_DRAW_UPPER_LEFT);
   u8g2.drawDisc(xcenter, ycenter, 5, U8G2_DRAW_UPPER_RIGHT);
  
@@ -879,7 +881,7 @@ void loop() {
   if(!digitalRead(CAN0_INT)) {
     CAN0.readMsgBuf(&rxId, &len, rxBuf);
   }
-
+  
   // needle position calculations for amperage and voltage
   // 155 = zero position, 180 = just before middle, 0 = middle, 25 = max
   va_angle = m;
@@ -972,15 +974,6 @@ void loop() {
     }
     while(u8g2.nextPage());
   }
-  
-  // Display power page
-  else if (hits == 3) {
-    u8g2.firstPage(); 
-    do {             
-      power(p_angle);
-    }
-    while(u8g2.nextPage());
-  }
 
   // Display bars page
   else if (hits == 4) {
@@ -996,6 +989,15 @@ void loop() {
     u8g2.firstPage();
     do {
       text();
+    }
+    while(u8g2.nextPage());
+  }
+  
+  // Display power page as default or if hit == 3
+  else {
+    u8g2.firstPage();
+    do {             
+      power(p_angle);
     }
     while(u8g2.nextPage());
   }

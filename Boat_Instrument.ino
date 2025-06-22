@@ -881,9 +881,13 @@ void loop() {
   if(!digitalRead(CAN0_INT)) {
     CAN0.readMsgBuf(&rxId, &len, rxBuf);
   }
-  
-  // needle position calculations for amperage and voltage
-  // 155 = zero position, 180 = just before middle, 0 = middle, 25 = max
+
+  // As a sine wave is fairly linear between 135deg and 225deg we use this for computing x and y positions for needle tip
+  // needle tip x position relative to gauge centre, starts at minus moved to 0 and ends at positive e.g -60 -> 0 -> +60
+  // needle tip y position relative to gauge centre, starts at 0 moves to max in middle before going back to 0 at full scale
+
+  // needle position calculations for amperage and voltage (using 50 degree resolution for 100 degree movement)
+  // 155 = start position, 180 = just before middle, 0 = middle, 25 = end position
   va_angle = m;
   // position correction
   if (va_angle < 25){
@@ -893,8 +897,8 @@ void loop() {
     va_angle -= 25;
   }
   
-  // needle position calculations watt gauge
-  // 135 = zero position, 180 = just before middle, 0 = middle, 45 = max
+  // needle position calculations watt gauge (using 90 degree resolution for 180 degree movement, as a sine wave doesn't have 180 degree linear movement)
+  // 135 = start position, 180 = just before middle, 0 = middle, 45 = end position
   p_angle = m;
   // position correction
   if (p_angle < 45){
@@ -992,11 +996,11 @@ void loop() {
     }
     while(u8g2.nextPage());
   }
-  
+
   // Display power page as default or if hit == 3
   else {
     u8g2.firstPage();
-    do {             
+    do {
       power(p_angle);
     }
     while(u8g2.nextPage());

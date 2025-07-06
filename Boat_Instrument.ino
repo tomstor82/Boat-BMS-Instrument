@@ -36,6 +36,7 @@
 //  18/06/25  Added pre-computed SCALING_RADIANS macro for radians and angle compensation to reduce the floating point calculations. Added hits to be 5 for text screen to be shown as it would always show if hits were not 1/3 - 5
 //  19/06/25  Simplified degree to radian computations by utilising macro and replacing 2 * PI / 360 for PI / 180
 //  22/06/25  Set Power page as else to show it if either no hits or 3 detected.
+//  06/07/25  Removed contrast do loop from loop, and added initial setting in main. Set 500ms initialisation for button_touch to avoid false button press during start.
 //
 //  Sketch 25684 bytes
 //
@@ -62,7 +63,7 @@ MCP_CAN CAN0(10);                   // Set CS to pin 10
 #define X_MAX 128                           // Display size
 #define Y_MAX 64
 #define SCALING_RADIANS (2 * PI / 180)      // As angles are half values we need to multiply by 2 before converting degrees to radians
-#define STATION 1                           // 1 for cabin position 3 for helm
+#define STATION 3                           // 1 for cabin position 3 for helm
 
 //  CANBUS data Identifier List
 //  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC **** ABS_AMP from OrionJr errendous ****
@@ -85,18 +86,18 @@ int rawI = 0;                       // Current - multiplied by 10 - negative val
 byte soc = 0;                       // State of charge - multiplied by 2
 byte wrench = 0;                    // Wrench icon variable
 unsigned int p;                     // Watt reading
-byte c = 180;                       // 8 bit unsigned integer range from 0-255 (low - high contrast)
+byte contrast = 255;                // 8 bit unsigned integer range from 0-255 (low - high contrast)
 
 byte m = 0;
 byte va_angle = 0;
 byte p_angle = 0;
 
 //  Button settings
-long button_held_ms = 0;            // 4 byte variable for storing duration button is held down
-unsigned long button_touch_ms = 0;  // 4 byte variable for storing time button is first pushed
-byte button_previous_state = HIGH;  // Pin state before pushing or releasing button
-byte button_state = LOW;            // Variable for button pushed or not
-byte hits = STATION;            // Initialised as 0 to start on correct page as startup registeres as a short button press
+long button_held_ms = 0;                // 4 byte variable for storing duration button is held down
+unsigned long button_touch_ms = 500;    // 4 byte variable for storing time button is first pushed; 500ms startup delay to avoid false button press detection
+byte button_previous_state = HIGH;      // Pin state before pushing or releasing button
+byte button_state = LOW;                // Variable for button pushed or not
+byte hits = STATION;                    // Initialised as 0 to start on correct page as startup registeres as a short button press
 
 // ------------------------ setup ------------------------------
 
@@ -117,13 +118,16 @@ void setup() {
 
   // Set standard font
   u8g2.setFont(u8g2_font_chikita_tf);
+
+  // Set initial contrast
+  u8g2.setContrast(contrast);
 }
 // -------------------- set contrast -----------------------------
 
-void contrast(byte c) {
-  u8g2.setContrast(c);
+/*void set_contrast(byte contrast) {
+  u8g2.setContrast(contrast);
 }
-
+*/
 // -------------------- amperage display * 2 bytes from rxBuf -------------------------
 
 void amperage(byte angle) {
@@ -871,12 +875,12 @@ void text() {
 // -------------------------- loop -------------------------
 
 void loop() {
-
+/*
   do {
-    contrast(c);
+    set_contrast(contrast);
   }
   while(u8g2.nextPage());
-  
+*/  
   // Read MCP2515
   if(!digitalRead(CAN0_INT)) {
     CAN0.readMsgBuf(&rxId, &len, rxBuf);
@@ -936,15 +940,16 @@ void loop() {
       
       // Long push for 0,5 sec changes contrast
       if (button_held_ms >= 500) {
-        if (c == 255) {
-          c = 100;
+        if (contrast == 255) {
+          contrast = 100;
         }
-        else if (c == 100) {
-          c = 180;
+        else if (contrast == 100) {
+          contrast = 180;
         }
         else {
-          c = 255;
+          contrast = 255;
         }
+        u8g2.setContrast(contrast);
       }
       
       // Short button press changes between pages

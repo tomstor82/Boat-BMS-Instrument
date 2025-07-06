@@ -62,7 +62,7 @@ MCP_CAN CAN0(10);                   // Set CS to pin 10
 #define X_MAX 128                           // Display size
 #define Y_MAX 64
 #define SCALING_RADIANS (2 * PI / 180)      // As angles are half values we need to multiply by 2 before converting degrees to radians
-#define STATION 3                           // 1 for cabin position 3 for helm
+#define STATION 1                           // 1 for cabin position 3 for helm
 
 //  CANBUS data Identifier List
 //  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC **** ABS_AMP from OrionJr errendous ****
@@ -362,12 +362,12 @@ void power(byte angle) {
   u8g2.print(p);
   
   // Draw sun when charge current is above 0A and charge relay is closed and charge safety relay is open or above 30A charge and charge safety relay closed
-  if (avgI < 0 && (ry & 0x02) == 0x02 && (ry & 0x04) != 0x04 || avgI < -300 && (ry & 0x02) == 0x02 && (ry & 0x04) == 0x04) {
+  if ( (ry & 0x02) == 0x02 && (avgI < 0 || avgI < -300 && (ry & 0x04) == 0x04) ) {
     u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
     u8g2.drawGlyph(4, 39, 69);
   }
   // Draw lightening bolt when charge current above 20A and charge safety relay is closed
-  else if (rawI < -200 && (ry & 0x04) == 0x04) {
+  else if (avgI < 0 && (ry & 0x04) == 0x04) {
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 40, 67);
   }

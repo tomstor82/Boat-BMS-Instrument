@@ -38,7 +38,7 @@
 //  22/06/25  Set Power page as else to show it if either no hits or 3 detected.
 //  06/07/25  Removed contrast do loop from loop, and added initial setting in main. Set 500ms initialisation for button_touch to avoid false button press during start.
 //
-//  Sketch 25684 bytes
+//  Sketch 25666 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -63,7 +63,7 @@ MCP_CAN CAN0(10);                   // Set CS to pin 10
 #define X_MAX 128                           // Display size
 #define Y_MAX 64
 #define SCALING_RADIANS (2 * PI / 180)      // As angles are half values we need to multiply by 2 before converting degrees to radians
-#define STATION 3                           // 1 for cabin position 3 for helm
+#define STATION 1                           // 1 for cabin position 3 for helm
 
 //  CANBUS data Identifier List
 //  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC **** ABS_AMP from OrionJr errendous ****
@@ -311,7 +311,7 @@ void power(byte angle) {
   m = map(p, 0, 10000, 0, 90);
 
   // Watt calculation
-  p = (abs(rawI)*rawU)/100.0;
+  p = (abs(rawI)/10.0)*rawU/10.0;
   
   // Display dimensions
   byte xcenter = X_MAX/2;
@@ -553,7 +553,7 @@ void bars() {
     u8g2.drawBox(113, 10, 7, 34);
   }
 }
-// ------------------------ text display * 13 bytes from rxBuf ---------------------
+// ------------------------ text display * 18 bytes from rxBuf ---------------------
 
 void text() {
 

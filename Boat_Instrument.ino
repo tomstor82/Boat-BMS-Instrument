@@ -38,7 +38,7 @@
 //  22/06/25  Set Power page as else to show it if either no hits or 3 detected.
 //  06/07/25  Removed contrast do loop from loop, and added initial setting in main. Set 500ms initialisation for button_touch to avoid false button press during start.
 //
-//  Sketch 25666 bytes
+//  Sketch 25692 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone

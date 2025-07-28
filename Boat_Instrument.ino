@@ -37,6 +37,7 @@
 //  19/06/25  Simplified degree to radian computations by utilising macro and replacing 2 * PI / 360 for PI / 180
 //  22/06/25  Set Power page as else to show it if either no hits or 3 detected.
 //  06/07/25  Removed contrast do loop from loop, and added initial setting in main. Set 500ms initialisation for button_touch to avoid false button press during start.
+//  28/07/25  Trying hits = 0 instead of = STATION to see if it fixes the page jump during startup
 //
 //  Sketch 25692 bytes
 //
@@ -44,26 +45,31 @@
 //  Arduino Uno clone
 //  SH1106 128x64 OLED
 //  MCP2515 TJ1A050 CANBus Transeiver
-//  Pushbutton and 10kOhm pull-down resistor (At the time I was unaware of the boards internal pull-up resistor)
+//  Pushbutton and 10kOhm pull-DOWN resistor (At the time I was unaware of the boards internal pull-UP resistor)
 
-#include <U8g2lib.h>
-#include <mcp_can.h>
-#include <SPI.h>                    // SPI library CANBUS
-#include <Wire.h>                   // I2C library OLED
+#include <U8g2lib.h>		                // U8g2 GUI library
+#include <mcp_can.h>		                // MCP CAN library
+#include <SPI.h>                        // SPI library (CAN)
+#include <Wire.h>                       // I2C library (OLED)
 
-//  OLED library driver
+//  SH1106 OLED I2C U8g2 LIBRARY AND pinout (3,3 - 5V)
 U8G2_SH1106_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+				                                // SDA pin A4 (I2C serial data)
+				                                // SCL pin A5 (I2C serial clock)
 
-//  CANBUS Shield pins
-#define CAN0_INT 9                  // Set INT to pin 9
-MCP_CAN CAN0(10);                   // Set CS to pin 10
+//  MCP2515 SPI CAN pinout (5V)
+#define CAN0_INT 9                      // Set INT to pin 9 (interrupt output)
+MCP_CAN CAN0(10);                       // Set CS to pin 10 (chip select)
+                                        // SI pin 11 (SPI data in)
+				                                // SO pin 12 (SPI data out)
+				                                // SCK pin 13 (SPI clock)
 
 // MACROS
 #define BUTTON_PIN 2
-#define X_MAX 128                           // Display size
-#define Y_MAX 64
-#define SCALING_RADIANS (2 * PI / 180)      // As angles are half values we need to multiply by 2 before converting degrees to radians
-#define STATION 1                           // 1 for cabin position 3 for helm
+#define X_MAX 128                       // Display width
+#define Y_MAX 64                        // Display height
+#define SCALING_RADIANS (2 * PI / 180)  // As angles are half values we need to multiply by 2 before converting degrees to radians
+#define STATION 1                       // 1 for cabin position 3 for helm
 
 //  CANBUS data Identifier List
 //  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC **** ABS_AMP from OrionJr errendous ****
@@ -72,21 +78,21 @@ MCP_CAN CAN0(10);                   // Set CS to pin 10
 //  ID 0x0BD BYT0+1:CUSTOM_FLAGS BYT2:HI_TMP BYT3:LO_TMP BYT4:COUNTER BYT5:BMS_STATUS
 
 //  CANBUS RX
-long unsigned int rxId;             // Stores 4 bytes 32 bits
-unsigned char len = 0;              // Stores at least 1 byte
-unsigned char rxBuf[8];             // Stores 8 bytes, 1 character  = 1 byte
+long unsigned int rxId;                 // Stores 4 bytes 32 bits
+unsigned char len = 0;                  // Stores at least 1 byte
+unsigned char rxBuf[8];                 // Stores 8 bytes, 1 character  = 1 byte
 
 //  CANBUS TX
 byte mpo[8] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Multi-purpose output activation signal
 /*byte mpe[8] = {0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};*/ // Multi-purpose enable activation signal
 
 //  Variables
-unsigned int rawU = 0;              // Voltage - multiplied by 10
-int rawI = 0;                       // Current - multiplied by 10 - negative value indicates charge
-byte soc = 0;                       // State of charge - multiplied by 2
-byte wrench = 0;                    // Wrench icon variable
-unsigned int p;                     // Watt reading
-byte contrast = 255;                // 8 bit unsigned integer range from 0-255 (low - high contrast)
+unsigned int rawU = 0;                  // Voltage - multiplied by 10
+int rawI = 0;                           // Current - multiplied by 10 - negative value indicates charge
+byte soc = 0;                           // State of charge - multiplied by 2
+byte wrench = 0;                        // Wrench icon variable
+unsigned int p;                         // Watt reading
+byte contrast = 255;                    // 8 bit unsigned integer range from 0-255 (low - high contrast)
 
 byte m = 0;
 byte va_angle = 0;
@@ -97,7 +103,7 @@ long button_held_ms = 0;                // 4 byte variable for storing duration 
 unsigned long button_touch_ms = 500;    // 4 byte variable for storing time button is first pushed; 500ms startup delay to avoid false button press detection
 byte button_previous_state = HIGH;      // Pin state before pushing or releasing button
 byte button_state = LOW;                // Variable for button pushed or not
-byte hits = STATION;                    // Initialised as 0 to start on correct page as startup registeres as a short button press
+byte hits = 0;                    	    // Initialised as 0 to start on correct page as startup registeres as a short button press
 
 // ------------------------ setup ------------------------------
 
@@ -105,7 +111,7 @@ void setup() {
   // Start serial monitor communication
   //Serial.begin(115200);
 
-  // Initialise MCP2515 running at 8MHz and baudrate 250kb/s
+  // Initialise MCP2515 for 2-way data with baudrate 250kbps and 8MHz clock speed
   CAN0.begin(MCP_ANY, CAN_250KBPS, MCP_8MHZ);
 
   CAN0.setMode(MCP_NORMAL);
@@ -880,7 +886,7 @@ void loop() {
     set_contrast(contrast);
   }
   while(u8g2.nextPage());
-*/  
+*/
   // Read MCP2515
   if(!digitalRead(CAN0_INT)) {
     CAN0.readMsgBuf(&rxId, &len, rxBuf);

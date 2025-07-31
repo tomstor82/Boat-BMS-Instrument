@@ -37,9 +37,10 @@
 //  19/06/25  Simplified degree to radian computations by utilising macro and replacing 2 * PI / 360 for PI / 180
 //  22/06/25  Set Power page as else to show it if either no hits or 3 detected.
 //  06/07/25  Removed contrast do loop from loop, and added initial setting in main. Set 500ms initialisation for button_touch to avoid false button press during start.
-//  28/07/25  Trying hits = 0 instead of = STATION to see if it fixes the page jump during startup
+//  28/07/25  Trying hits = 0 instead of = STATION to see if it fixes the page jump during startup.
+//  31/07/25  Increased DCL to 8 bit due overflow, had to move relay state to next rxId. Set lightening bolt as priority over sun icon. Added warning symbol if current nearing dcl.
 //
-//  Sketch 25692 bytes
+//  Sketch 25712 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -296,9 +297,11 @@ void power(byte angle) {
   int fs;
   // Relay status for determining when to show lightening bolt and sun icon respectively
   byte ry;
+  // Discharge current limit for warning indication
+  uint8_t dcl;
   // Average current for clock and sun symbol calculations
   int avgI;
-  
+
   // Sort CANBus data buffer
   if(rxId == 0x03B) {
     rawU = ((rxBuf[0] << 8) + rxBuf[1]);
@@ -307,9 +310,10 @@ void power(byte angle) {
   }
   if(rxId == 0x0BD) {
     fs = (rxBuf[0] + rxBuf[1] + rxBuf[5]);
+    ry = (rxBuf[6]);
   }
   if(rxId == 0x0A9) {
-    ry = (rxBuf[0]);
+    dcl = (rxBuf[1] << 8) + rxBuf[2];
     avgI = ((rxBuf[5] << 8) + rxBuf[6]);
   }
 
@@ -371,23 +375,23 @@ void power(byte angle) {
   }
   u8g2.print(p);
   
-  // Draw sun when charge current is above 0A and charge relay is closed and charge safety relay is open or above 30A charge and charge safety relay closed
-  if ( (ry & 0x02) == 0x02 && (avgI < 0 || avgI < -300 && (ry & 0x04) == 0x04) ) {
-    u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
-    u8g2.drawGlyph(4, 39, 69);
-  }
-  // Draw lightening bolt when charge current above 20A and charge safety relay is closed
-  else if (avgI < 0 && (ry & 0x04) == 0x04) {
+  // Draw lightening bolt when charger safety relay is energised and battery charging
+  if (avgI < 0 && (ry & 0x04) == 0x04) {
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 40, 67);
   }
-  // Draw warning symbol at and below 20% State of Charge if charge safety relay is open
-  else if (soc <= 40 && (ry & 0x04) != 0x04) {   // soc from canbus is multiplied by 2
+   // Draw sun when charge relay is closed and battery charging
+  else if ( (ry & 0x02) == 0x02 && avgI < 0 ) {
+    u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
+    u8g2.drawGlyph(4, 39, 69);
+  }
+  // Draw warning symbol at and below 20% State of Charge if charge safety relay is open or if discharge too near dcl
+  else if (soc <= 40 && (ry & 0x04) != 0x04 || ( dcl - 10 ) < avgI ) {   // soc from canbus is multiplied by 2
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 39, 71);
   }
 
-  // Draw wrench icon if BMS flags hvoltamp_anglee not been seen
+  // Draw wrench icon if BMS flags hasn't been seen
   if (fs != wrench) {
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(3, 62, 72);
@@ -569,7 +573,7 @@ void text() {
   byte lT;                // Lowest cell temperature * was int
   uint16_t ah;            // Amp hours *was float
   byte ry;                // Relay status
-  byte dcl;               // Discharge current limit * was unsigned int
+  uint8_t dcl;            // Discharge current limit
   byte ccl;               // Charge current limit * was unsigned int
   byte ct;                // Counter to observe data received
   byte st;                // BMS Status
@@ -579,9 +583,8 @@ void text() {
 
   // Sort CANBus data buffer
   if (rxId == 0x0A9) {
-    ry = rxBuf[0];
-    ccl = rxBuf[1];
-    dcl = rxBuf[2];
+    ccl = rxBuf[0];
+    dcl = (rxBuf[1] << 8) + rxBuf[2];
     ah = (rxBuf[3] << 8) + rxBuf[4];
   }
   if (rxId == 0x6B2) {
@@ -593,6 +596,7 @@ void text() {
     lT = rxBuf[3];
     ct = rxBuf[4];
     st = rxBuf[5];
+    ry = rxBuf[6];
     // Saves fault & status to "wrench" after reviewing text page
     wrench = (rxBuf[0] + rxBuf[1] + rxBuf[5]);
   }

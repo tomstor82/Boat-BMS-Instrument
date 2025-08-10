@@ -41,7 +41,7 @@
 //  31/07/25  Increased DCL to 8 bit due overflow, had to move relay state to next rxId. Set lightening bolt as priority over sun icon. Added warning symbol if current nearing dcl.
 //  03/08/25  Hits now STATION - 1 to start at correct page. Changed data types to save memory. *** Need some Amp gauge damping for the resolution change ***
 //
-//  Sketch 25756 bytes
+//  Sketch 25766 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -297,7 +297,7 @@ void power(byte angle) {
   uint16_t fs;       // Fault messages & status from CANBus for displaying wrench icon
   uint8_t ry;      // Relay status for determining when to show lightening bolt and sun icon respectively
   uint16_t dcl;      // Discharge current limit for warning indication
-  int16_t avgI;     // Average current for clock and sun symbol calculations
+  int16_t avgI;     // Average current for clock and sun symbol calculations 0,1
 
   // Sort CANBus data buffer
   if (rxId == 0x03B) {
@@ -382,8 +382,8 @@ void power(byte angle) {
     u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
     u8g2.drawGlyph(4, 39, 69);
   }
-  // Draw warning symbol at and below 20% State of Charge if charge safety relay is open or if discharge current approaches dcl
-  else if ( (ry & 0x04) != 0x04 && soc <= 40 || ( dcl - 10 ) < avgI ) {   // soc from canbus is multiplied by 2
+  // Draw warning symbol at and below 20% State of Charge if charge safety relay is open or if discharge current is 90% of dcl
+  else if ( (ry & 0x04) != 0x04 && soc <= 40 || ( dcl * 9 ) < avgI ) {   // soc from canbus is multiplied by 2 and avgI is multiplied by 2 hence 90% of DCL
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 39, 71);
   }

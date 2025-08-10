@@ -39,8 +39,9 @@
 //  06/07/25  Removed contrast do loop from loop, and added initial setting in main. Set 500ms initialisation for button_touch to avoid false button press during start.
 //  28/07/25  Trying hits = 0 instead of = STATION to see if it fixes the page jump during startup.
 //  31/07/25  Increased DCL to 8 bit due overflow, had to move relay state to next rxId. Set lightening bolt as priority over sun icon. Added warning symbol if current nearing dcl.
+//  03/08/25  Hits now STATION - 1 to start at correct page. Changed data types to save memory. *** Need some Amp gauge damping for the resolution change ***
 //
-//  Sketch 25712 bytes
+//  Sketch 25756 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -75,7 +76,7 @@ MCP_CAN CAN0(10);                       // Set CS to pin 10 (chip select)
 //  CANBUS data Identifier List
 //  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC **** ABS_AMP from OrionJr errendous ****
 //  ID 0x6B2 BYT0+1:LOW_CELL BYT2+3:HIGH_CELL BYT4:HEALTH BYT5+6:CYCLES
-//  ID 0x0A9 BYT0:RELAY_STATE BYT1:CCL BYT2:DCL BYT3+4:PACK_AH BYT5+6:AVG_AMP
+//  ID 0x0A9 BYT0:CCL BYT1+2:DCL BYT3+4:PACK_AH BYT5+6:AVG_AMP BYT7:RELAY_STATE
 //  ID 0x0BD BYT0+1:CUSTOM_FLAGS BYT2:HI_TMP BYT3:LO_TMP BYT4:COUNTER BYT5:BMS_STATUS
 
 //  CANBUS RX
@@ -87,7 +88,7 @@ unsigned char rxBuf[8];                 // Stores 8 bytes, 1 character  = 1 byte
 byte mpo[8] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Multi-purpose output activation signal
 /*byte mpe[8] = {0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};*/ // Multi-purpose enable activation signal
 
-//  Variables
+//  Global variables
 unsigned int rawU = 0;                  // Voltage - multiplied by 10
 int rawI = 0;                           // Current - multiplied by 10 - negative value indicates charge
 byte soc = 0;                           // State of charge - multiplied by 2
@@ -104,7 +105,7 @@ long button_held_ms = 0;                // 4 byte variable for storing duration 
 unsigned long button_touch_ms = 500;    // 4 byte variable for storing time button is first pushed; 500ms startup delay to avoid false button press detection
 byte button_previous_state = HIGH;      // Pin state before pushing or releasing button
 byte button_state = LOW;                // Variable for button pushed or not
-byte hits = 0;                    	    // Initialised as 0 to start on correct page as startup registeres as a short button press
+byte hits = STATION - 1;                // Initialised with -1 to start on correct page as button press is registered at startup
 
 // ------------------------ setup ------------------------------
 
@@ -135,6 +136,72 @@ void setup() {
   u8g2.setContrast(contrast);
 }
 */
+
+// --------------------- volt display * 2 bytes from rxBuf-----------------------
+
+void voltage(byte angle) {
+
+  // Sort CANBus data buffer
+  if(rxId == 0x03B) {
+    rawU = ((rxBuf[0] << 8) + rxBuf[1]);
+  }
+  // Map voltage from 44,0V - 64,0V between 0 - 50 degrees
+  m = map(rawU, 440, 640, 0, 50);
+
+  // Display dimensions
+  byte xcenter = X_MAX/2;
+  byte ycenter = 80;
+  byte arc = 64;
+
+  // Draw arc and scale lines
+  u8g2.drawCircle(xcenter, ycenter+4, arc+8);
+  u8g2.drawCircle(xcenter, ycenter+4, arc+12);
+  // Draw far left line
+  u8g2.drawLine(6, 31, 12, 36);
+  // Draw left line
+  u8g2.drawLine(12, 30, 14, 32);
+  // Draw quarter left line
+  u8g2.drawLine(31, 13, 34, 20);
+  // Draw center line
+  u8g2.drawVLine(64, 7, 7);
+  // Draw quarter right line
+  u8g2.drawLine(95, 12, 91, 19);
+  // Draw right line
+  u8g2.drawLine(99, 17, 97, 20);
+  // Draw far right line
+  u8g2.drawLine(122, 31, 116, 36);
+
+  // Min shading lines
+  u8g2.drawLine(12, 30, 9, 33);
+  u8g2.drawLine(13, 30, 10, 33);
+  u8g2.drawLine(13, 31, 10, 34);
+  u8g2.drawLine(14, 31, 11, 34);
+  u8g2.drawLine(14, 32, 11, 35);
+  // Max shading lines
+  u8g2.drawLine(94, 15, 99, 18);
+  u8g2.drawLine(94, 16, 98, 18);
+  u8g2.drawLine(94, 17, 98, 19);
+  u8g2.drawLine(93, 17, 97, 19);
+  u8g2.drawLine(93, 18, 98, 20);
+
+  // Draw the needle and disc
+  float x1 = sin(angle * SCALING_RADIANS);
+  float y1 = cos(angle * SCALING_RADIANS);
+  u8g2.drawLine(xcenter, ycenter, xcenter + x1 * arc, ycenter - y1 * arc);
+  u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_LEFT);
+  u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
+  // Draw scale labels
+  u8g2.drawStr(0, 29, "44");
+  u8g2.drawStr(24, 11, "49");
+  u8g2.drawStr(59, 5, "54");
+  u8g2.drawStr(92, 10, "59");
+  u8g2.drawStr(118, 29, "64");
+
+  // Draw unit
+  u8g2.drawStr(48, 38, "Voltage");
+
+}
+
 // -------------------- amperage display * 2 bytes from rxBuf -------------------------
 
 void amperage(byte angle) {
@@ -223,98 +290,28 @@ void amperage(byte angle) {
 
 }
 
-// --------------------- volt display * 2 bytes from rxBuf-----------------------
-
-void voltage(byte angle) {
-
-  // Sort CANBus data buffer
-  if(rxId == 0x03B) {
-    rawU = ((rxBuf[0] << 8) + rxBuf[1]);  
-  }
-  // Map voltage from 44,0V - 64,0V between 0 - 50 degrees
-  m = map(rawU, 440, 640, 0, 50);
-
-  // Display dimensions
-  byte xcenter = X_MAX/2;
-  byte ycenter = 80;
-  byte arc = 64;
-
-  // Draw arc and scale lines
-  u8g2.drawCircle(xcenter, ycenter+4, arc+8);
-  u8g2.drawCircle(xcenter, ycenter+4, arc+12);
-  // Draw far left line
-  u8g2.drawLine(6, 31, 12, 36);
-  // Draw left line
-  u8g2.drawLine(12, 30, 14, 32);
-  // Draw quarter left line
-  u8g2.drawLine(31, 13, 34, 20);
-  // Draw center line
-  u8g2.drawVLine(64, 7, 7);
-  // Draw quarter right line
-  u8g2.drawLine(95, 12, 91, 19);
-  // Draw right line
-  u8g2.drawLine(99, 17, 97, 20);
-  // Draw far right line
-  u8g2.drawLine(122, 31, 116, 36);
-  
-  
- // Min shading lines
-  u8g2.drawLine(12, 30, 9, 33);
-  u8g2.drawLine(13, 30, 10, 33);
-  u8g2.drawLine(13, 31, 10, 34);
-  u8g2.drawLine(14, 31, 11, 34);
-  u8g2.drawLine(14, 32, 11, 35);
-  // Max shading lines
-  u8g2.drawLine(94, 15, 99, 18);
-  u8g2.drawLine(94, 16, 98, 18);
-  u8g2.drawLine(94, 17, 98, 19);
-  u8g2.drawLine(93, 17, 97, 19);
-  u8g2.drawLine(93, 18, 98, 20);
-  
-  // Draw the needle and disc
-  float x1 = sin(angle * SCALING_RADIANS);
-  float y1 = cos(angle * SCALING_RADIANS);
-  u8g2.drawLine(xcenter, ycenter, xcenter + x1 * arc, ycenter - y1 * arc);
-  u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_LEFT);
-  u8g2.drawDisc(xcenter, Y_MAX+10, 20, U8G2_DRAW_UPPER_RIGHT);
-  // Draw scale labels
-  u8g2.drawStr(0, 29, "44"); 
-  u8g2.drawStr(24, 11, "49");                  
-  u8g2.drawStr(59, 5, "54");
-  u8g2.drawStr(92, 10, "59");
-  u8g2.drawStr(118, 29, "64");
-  
-  // Draw unit
-  u8g2.drawStr(48, 38, "Voltage");
-
-}
-
-// --------------------- power display * 11 bytes from rxBuf ----------------------
+// --------------------- power display * 13 bytes from rxBuf ----------------------
 
 void power(byte angle) {
 
-  // Fault messages & status from CANBus for displaying wrench icon
-  int fs;
-  // Relay status for determining when to show lightening bolt and sun icon respectively
-  byte ry;
-  // Discharge current limit for warning indication
-  uint8_t dcl;
-  // Average current for clock and sun symbol calculations
-  int avgI;
+  uint16_t fs;       // Fault messages & status from CANBus for displaying wrench icon
+  uint8_t ry;      // Relay status for determining when to show lightening bolt and sun icon respectively
+  uint16_t dcl;      // Discharge current limit for warning indication
+  int16_t avgI;     // Average current for clock and sun symbol calculations
 
   // Sort CANBus data buffer
-  if(rxId == 0x03B) {
-    rawU = ((rxBuf[0] << 8) + rxBuf[1]);
-    rawI = ((rxBuf[2] << 8) + rxBuf[3]);
-    soc = (rxBuf[6]);
+  if (rxId == 0x03B) {
+    rawU = (rxBuf[0] << 8) + rxBuf[1];
+    rawI = (rxBuf[2] << 8) + rxBuf[3];
+    soc = rxBuf[6];
   }
-  if(rxId == 0x0BD) {
-    fs = (rxBuf[0] + rxBuf[1] + rxBuf[5]);
-    ry = (rxBuf[6]);
-  }
-  if(rxId == 0x0A9) {
+  if (rxId == 0x0A9) {
     dcl = (rxBuf[1] << 8) + rxBuf[2];
-    avgI = ((rxBuf[5] << 8) + rxBuf[6]);
+    avgI = (rxBuf[5] << 8) + rxBuf[6];
+  }
+  if (rxId == 0x0BD) {
+    fs = rxBuf[0] + rxBuf[1] + rxBuf[5];
+    ry = rxBuf[6];
   }
 
   // Map watt readings 0-10000 to between 0 - 90 degrees
@@ -385,8 +382,8 @@ void power(byte angle) {
     u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
     u8g2.drawGlyph(4, 39, 69);
   }
-  // Draw warning symbol at and below 20% State of Charge if charge safety relay is open or if discharge too near dcl
-  else if (soc <= 40 && (ry & 0x04) != 0x04 || ( dcl - 10 ) < avgI ) {   // soc from canbus is multiplied by 2
+  // Draw warning symbol at and below 20% State of Charge if charge safety relay is open or if discharge current approaches dcl
+  else if ( (ry & 0x04) != 0x04 && soc <= 40 || ( dcl - 10 ) < avgI ) {   // soc from canbus is multiplied by 2
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 39, 71);
   }
@@ -405,7 +402,7 @@ void power(byte angle) {
   // Draw state of charge
   u8g2.setCursor(4,16);
   u8g2.setFont(u8g2_font_chikita_tf);
-  u8g2.print(soc/2); u8g2.print('%');
+  u8g2.print(soc / 2); u8g2.print('%');
   
   // Draw clock
   uint16_t h;
@@ -457,8 +454,8 @@ void power(byte angle) {
 void bars() {
   
   // Variables from CANBus
-  int hC;        // High Cell Voltage in 0,01V
-  int lC;        // Low Cell Voltage in 0,01V
+  uint16_t hC;   // High Cell Voltage in 0,01V
+  uint16_t lC;   // Low Cell Voltage in 0,01V
   byte h;        // Health
   
   // Sort CANBus data buffer
@@ -568,12 +565,12 @@ void bars() {
 void text() {
 
   // Variables from CANBus
-  uint16_t fu;            // BMS faults
+  uint16_t fu;                 // BMS faults
   byte hT;                // Highest cell temperature *was int
   byte lT;                // Lowest cell temperature * was int
   uint16_t ah;            // Amp hours *was float
   byte ry;                // Relay status
-  uint8_t dcl;            // Discharge current limit
+  uint16_t dcl;           // Discharge current limit
   byte ccl;               // Charge current limit * was unsigned int
   byte ct;                // Counter to observe data received
   byte st;                // BMS Status
@@ -686,8 +683,8 @@ void text() {
   u8g2.print(ccl); u8g2.print(" A"); 
   
   // Draw fault and bms status flags
-  int x = 66;         // x position for flags
-  int y = 0;          // variable y position for flags
+  byte x = 66;         // x position for flags
+  byte y = 0;          // variable y position for flags
   u8g2.drawStr(69, 5, "Flags");
 
   // Flag internal communication fault

@@ -40,6 +40,7 @@
 //  28/07/25  Trying hits = 0 instead of = STATION to see if it fixes the page jump during startup.
 //  31/07/25  Increased DCL to 8 bit due overflow, had to move relay state to next rxId. Set lightening bolt as priority over sun icon. Added warning symbol if current nearing dcl.
 //  03/08/25  Hits now STATION - 1 to start at correct page. Changed data types to save memory. *** Need some Amp gauge damping for the resolution change ***
+//  26/08/25  Crash and lag issues. Changed SCALING_RADIANS from I 8 decimals to 3
 //
 //  Sketch 25766 bytes
 //
@@ -70,8 +71,8 @@ MCP_CAN CAN0(10);                       // Set CS to pin 10 (chip select)
 #define BUTTON_PIN 2
 #define X_MAX 128                       // Display width
 #define Y_MAX 64                        // Display height
-#define SCALING_RADIANS (2 * PI / 180)  // As angles are half values we need to multiply by 2 before converting degrees to radians
-#define STATION 1                       // 1 for cabin position 3 for helm
+#define SCALING_RADIANS 0.035           // (2 * PI / 180) - As angles are half values we need to multiply by 2 before converting degrees to radians
+#define STATION 3                       // 1 for cabin position 3 for helm
 
 //  CANBUS data Identifier List
 //  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC **** ABS_AMP from OrionJr errendous ****
@@ -294,10 +295,10 @@ void amperage(byte angle) {
 
 void power(byte angle) {
 
-  uint16_t fs;       // Fault messages & status from CANBus for displaying wrench icon
-  uint8_t ry;      // Relay status for determining when to show lightening bolt and sun icon respectively
-  uint16_t dcl;      // Discharge current limit for warning indication
-  int16_t avgI;     // Average current for clock and sun symbol calculations 0,1
+  uint16_t fs;        // Fault messages & status from CANBus for displaying wrench icon
+  uint8_t ry;         // Relay status for determining when to show lightening bolt and sun icon respectively
+  uint16_t dcl;       // Discharge current limit for warning indication
+  int16_t avgI;       // Average current for clock and sun symbol calculations 0,1
 
   // Sort CANBus data buffer
   if (rxId == 0x03B) {
@@ -318,7 +319,7 @@ void power(byte angle) {
   m = map(p, 0, 10000, 0, 90);
 
   // Watt calculation
-  p = (abs(rawI)/10.0)*rawU/10.0;
+  p = abs(rawI) / 10.0 * rawU / 10.0; // have tried multiplying and then divide by 100, but p needs to be 32-bit and still cause occasional 0 reading
   
   // Display dimensions
   byte xcenter = X_MAX/2;
@@ -407,7 +408,7 @@ void power(byte angle) {
   // Draw clock
   uint16_t h;
   byte m;
-  const char time_str[10];
+  const char time_str[12];
   // Discharge
   if (avgI > 0) {
     h = soc / (avgI/10.0);

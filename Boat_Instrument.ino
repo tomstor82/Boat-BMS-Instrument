@@ -40,7 +40,7 @@
 //  28/07/25  Trying hits = 0 instead of = STATION to see if it fixes the page jump during startup.
 //  31/07/25  Increased DCL to 8 bit due overflow, had to move relay state to next rxId. Set lightening bolt as priority over sun icon. Added warning symbol if current nearing dcl.
 //  03/08/25  Hits now STATION - 1 to start at correct page. Changed data types to save memory. *** Need some Amp gauge damping for the resolution change ***
-//  26/08/25  Crash and lag issues. Changed SCALING_RADIANS from I 8 decimals to 3
+//  26/08/25  Crash and lag issues. Changed SCALING_RADIANS from I 8 decimals to 3 and increased time_str from 11 to 12.
 //
 //  Sketch 25766 bytes
 //
@@ -72,7 +72,7 @@ MCP_CAN CAN0(10);                       // Set CS to pin 10 (chip select)
 #define X_MAX 128                       // Display width
 #define Y_MAX 64                        // Display height
 #define SCALING_RADIANS 0.035           // (2 * PI / 180) - As angles are half values we need to multiply by 2 before converting degrees to radians
-#define STATION 3                       // 1 for cabin position 3 for helm
+#define STATION 1                       // 1 for cabin position 3 for helm
 
 //  CANBUS data Identifier List
 //  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC **** ABS_AMP from OrionJr errendous ****

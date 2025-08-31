@@ -75,10 +75,11 @@ MCP_CAN CAN0(10);                       // Set CS to pin 10 (chip select)
 #define STATION 1                       // 1 for cabin position 3 for helm
 
 //  CANBUS data Identifier List
-//  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC **** ABS_AMP from OrionJr errendous ****
-//  ID 0x6B2 BYT0+1:LOW_CELL BYT2+3:HIGH_CELL BYT4:HEALTH BYT5+6:CYCLES
-//  ID 0x0A9 BYT0:CCL BYT1+2:DCL BYT3+4:PACK_AH BYT5+6:AVG_AMP BYT7:RELAY_STATE
-//  ID 0x0BD BYT0+1:CUSTOM_FLAGS BYT2:HI_TMP BYT3:LO_TMP BYT4:COUNTER BYT5:BMS_STATUS
+//  ID 0x03B BYT0+1:INST_VOLT BYT2+3:INST_AMP BYT4+5:ABS_AMP BYT6:SOC BYT7:CRC **** ABS_AMP from OrionJr errendous ****
+//  ID 0x6B2 BYT0+1:LOW_CELL BYT2+3:HIGH_CELL BYT4:HEALTH BYT5+6:CYCLES BYT7:CRC
+//  ID 0x0A9 BYT0:CCL BYT1+2:DCL BYT3+4:PACK_AH BYT5+6:AVG_AMP BYT7:CRC
+//  ID 0x0BD BYT0+1:CUSTOM_FLAGS BYT2:HI_TMP BYT3:LO_TMP BYT4:COUNTER BYT5:BMS_STATUS BYT6:RELAY_STATE BYT7:CRC
+//  ID 0x0BE BYT0:HI_CELL_VOLT BYT1:LO_CELL_VOLT BYT3:BLANK BYT4:CRC
 
 //  CANBUS RX
 long unsigned int rxId;                 // Stores 4 bytes 32 bits
@@ -106,7 +107,59 @@ long button_held_ms = 0;                // 4 byte variable for storing duration 
 unsigned long button_touch_ms = 500;    // 4 byte variable for storing time button is first pushed; 500ms startup delay to avoid false button press detection
 byte button_previous_state = HIGH;      // Pin state before pushing or releasing button
 byte button_state = LOW;                // Variable for button pushed or not
-byte hits = STATION - 1;                // Initialised with -1 to start on correct page as button press is registered at startup
+byte hits = STATION;                    // Initialised with -1 to start on correct page as button press is registered at startup
+
+// ------------------------- Button press handling function -----------------------
+
+// Button checking function for PULL-DOWN
+void checkButton() {
+  button_state = digitalRead(BUTTON_PIN);
+  
+  // Button pressed (rising edge) - HIGH means pressed with pull-down
+  if (button_state == HIGH && button_previous_state == LOW) {
+    button_touch_ms = millis();
+  }
+  
+  // Button released (falling edge) - LOW means released with pull-down
+  if (button_state == LOW && button_previous_state == HIGH) {
+    button_held_ms = millis() - button_touch_ms;
+    
+    // Only process if button was held for reasonable time (debounce)
+    if (button_held_ms > 50 && button_held_ms < 5000) {
+      handleButtonPress(button_held_ms);
+    }
+  }
+  button_previous_state = button_state;
+}
+
+// Button press handling function - SAME as before
+void handleButtonPress(unsigned long duration) {
+  // Very long press (3000ms or more) - send CAN message
+  if (duration >= 3000) {
+    CAN0.sendMsgBuf(0x32, 0, 8, mpo);
+    return;
+  }
+  
+  // Long press (500ms or more) - change contrast
+  if (duration >= 500) {
+    if (contrast == 255) {
+      contrast = 100;
+    } else if (contrast == 100) {
+      contrast = 180;
+    } else {
+      contrast = 255;
+    }
+    u8g2.setContrast(contrast);
+    return;
+  }
+  
+  // Short press - change pages
+  if (hits < 5) {
+    hits++;
+  } else {
+    hits = STATION;
+  }
+}
 
 // ------------------------ setup ------------------------------
 
@@ -143,7 +196,7 @@ void setup() {
 void voltage(byte angle) {
 
   // Sort CANBus data buffer
-  if(rxId == 0x03B) {
+  if(rxId == 0x03B && len == 8) {
     rawU = ((rxBuf[0] << 8) + rxBuf[1]);
   }
   // Map voltage from 44,0V - 64,0V between 0 - 50 degrees
@@ -208,7 +261,7 @@ void voltage(byte angle) {
 void amperage(byte angle) {
 
   // Sort CANBus data buffer
-  if(rxId == 0x03B) {
+  if(rxId == 0x03B && len == 8) {
     rawI = ((rxBuf[2] << 8) + rxBuf[3]);
   }
 
@@ -301,16 +354,16 @@ void power(byte angle) {
   int16_t avgI;       // Average current for clock and sun symbol calculations 0,1
 
   // Sort CANBus data buffer
-  if (rxId == 0x03B) {
+  if (rxId == 0x03B && len == 8) {
     rawU = (rxBuf[0] << 8) + rxBuf[1];
     rawI = (rxBuf[2] << 8) + rxBuf[3];
     soc = rxBuf[6];
   }
-  if (rxId == 0x0A9) {
+  if (rxId == 0x0A9 && len == 8) {
     dcl = (rxBuf[1] << 8) + rxBuf[2];
     avgI = (rxBuf[5] << 8) + rxBuf[6];
   }
-  if (rxId == 0x0BD) {
+  if (rxId == 0x0BD && len == 8) {
     fs = rxBuf[0] + rxBuf[1] + rxBuf[5];
     ry = rxBuf[6];
   }
@@ -408,7 +461,7 @@ void power(byte angle) {
   // Draw clock
   uint16_t h;
   byte m;
-  const char time_str[12];
+  char time_str[12];
   // Discharge
   if (avgI > 0) {
     h = soc / (avgI/10.0);
@@ -434,16 +487,12 @@ void power(byte angle) {
   if (h > 120) {
     byte d = h / 24;
     // Generate string
-    sprintf(time_str, "%d days", d);
+    snprintf(time_str, sizeof(time_str), "%d days", d);
   }
   else {
-    const char plural[2] = {"s"};
-    // Remove plural if 1
-    if (h == 1) {
-      strcpy(plural, "");
-    }
+    const char *plural = ( h == 1 ) ? "" : "s";
     // Generate string
-    sprintf(time_str, "%02d:%02dhr%s", h, m, plural);
+    snprintf(time_str, sizeof(time_str), "%02d:%02dhr%s", h, m, plural);
   }
 
   // Print string
@@ -460,11 +509,11 @@ void bars() {
   byte h;        // Health
   
   // Sort CANBus data buffer
-  if(rxId == 0x03B) {
+  if(rxId == 0x03B && len == 8) {
     rawU = ((rxBuf[0] << 8) + rxBuf[1]);
     rawI = ((rxBuf[2] << 8) + rxBuf[3]);
   }
-  if(rxId == 0x6B2) {
+  if(rxId == 0x6B2 && len == 8) {
     lC = ((rxBuf[0] << 8) + rxBuf[1]);
     hC = ((rxBuf[2] << 8) + rxBuf[3]);
     h = (rxBuf[4]);
@@ -580,15 +629,15 @@ void text() {
   byte lCid;              // Low Cell ID
 
   // Sort CANBus data buffer
-  if (rxId == 0x0A9) {
+  if (rxId == 0x0A9 && len == 8) {
     ccl = rxBuf[0];
     dcl = (rxBuf[1] << 8) + rxBuf[2];
     ah = (rxBuf[3] << 8) + rxBuf[4];
   }
-  if (rxId == 0x6B2) {
+  if (rxId == 0x6B2 && len == 8) {
     cc = (rxBuf[5] << 8) + rxBuf[6];
   }
-  if (rxId == 0x0BD) {
+  if (rxId == 0x0BD && len == 8) {
     fu = (rxBuf[0] << 8) + rxBuf[1];
     hT = rxBuf[2];
     lT = rxBuf[3];
@@ -598,7 +647,7 @@ void text() {
     // Saves fault & status to "wrench" after reviewing text page
     wrench = (rxBuf[0] + rxBuf[1] + rxBuf[5]);
   }
-  if (rxId == 0x0BE ) {
+  if (rxId == 0x0BE && len == 4) {
     hCid = rxBuf[0];
     lCid = rxBuf[1];
   }
@@ -921,7 +970,9 @@ void loop() {
   }
 
   // Check the status of the button
-  button_state = digitalRead(BUTTON_PIN);
+  checkButton();
+
+  /*button_state = digitalRead(BUTTON_PIN);
 
   // Button pressed
   if (button_state == HIGH && button_previous_state == LOW) {
@@ -940,12 +991,12 @@ void loop() {
       if (button_held_ms > 3000) {
         CAN0.sendMsgBuf(0x32, 0, 8, mpo);
       }
-      
+      */
       /*// Long push over 2 sec sends MPE signal ** not yet assigned task **
       else if (button_held_ms > 2000) {
         CAN0.sendMsgBuf(0x32, 0, 8, mpe);
       }*/
-      
+      /*
       // Long push for 0,5 sec changes contrast
       if (button_held_ms >= 500) {
         if (contrast == 255) {
@@ -973,7 +1024,7 @@ void loop() {
     // Save button state
     button_previous_state = button_state;
   }
-
+*/
   // Display voltage page
   if (hits == 1) {
     u8g2.firstPage(); 

@@ -14,8 +14,8 @@
 //  01/06/19  Temp hi and lo on bottom right text screen, whilst cycles removed and Ah taken its place.
 //  03/06/19  Shifted the middle of text page 4 pixels left; Added BMS status to flags as well as change name from faults to flag. Various pos adjustments on text page.
 //  11/06/19  Swapped low and high cell in bars
-//  24/06/19  Edited CANBus data from Orion Jr as follows: removed BMS calculations for processCanData()[0], DCL, CCL; set Big Endian byte order on BMS status. Changed to 1 byte hex (0x01) instead of 2 byte (0x0001) in BMS status on text page.
-//  27/06/19  Added delayed amperage reading for more stability in watt and time indications and changed processCanData()[1] from float to int.
+//  24/06/19  Edited CANBus data from Orion Jr as follows: removed BMS calculations for DATA()[0], DCL, CCL; set Big Endian byte order on BMS status. Changed to 1 byte hex (0x01) instead of 2 byte (0x0001) in BMS status on text page.
+//  27/06/19  Added delayed amperage reading for more stability in watt and time indications and changed DATA()[1] from float to int.
 //  30/06/19  Added rxBuf for "ry" in gauge for displaying "sun" only when relay enabled; added bms status to new variable "fs" for "wrench" icon display; adjusted "0A" DCH & CHG limits.
 //  09/07/19  Replaced counter with total pack cycles
 //  27/07/19  Added counter and adjusted cycles on text page; Adjusted Ah digit position
@@ -25,7 +25,7 @@
 //  21/09/19  Removed the absolute and voltamp_angleerage current algorithm as I detected no values from CANBUS.
 //  22/09/19  Edited CANBUS data to fit Avg and Abs current as I suspect the rxId int is unable to fit a 5th Id. AvgI used for watt and clock computations; **** modified clock calculations. ****
 //  23/09/19  Adjusted clock position two pixels left when hours exceed 99.
-//  24/09/19  Replaced avgI with processCanData()[1] for displaying lightning symbol whilst charging.
+//  24/09/19  Replaced avgI with DATA()[1] for displaying lightning symbol whilst charging.
 //  25/09/19  Added button press to swap between voltamp_angleerage and instant Watt reading. But had no success changing between the values. **** Deleted ****
 //  29/09/19  Added button press to change contrast level. ** Replaced "if" in void loop button pressing for "else if & else" same with "hits". Saves 20 bytes.
 //  01/10/19  Changed abbreviatons on BMS status messages to easier understand their meaning.
@@ -69,6 +69,7 @@ MCP_CAN CAN0(10);                       // Set CS to pin 10 (chip select)
 				                                // SCK pin 13 (SPI clock)
 
 // MACROS
+#define processCanData DATA             // Abbreviation for readability
 #define BUTTON_PIN 2
 #define X_MAX 128                       // Display width
 #define Y_MAX 64                        // Display height
@@ -152,30 +153,6 @@ void handleButtonPress(unsigned long duration) {
   }
 }
 
-// ------------------------ setup ------------------------------
-
-void setup() {
-  // Start serial monitor communication
-  //Serial.begin(115200);
-
-  // Initialise MCP2515 for 2-way data with baudrate 250kbps and 8MHz clock speed
-  CAN0.begin(MCP_ANY, CAN_250KBPS, MCP_8MHZ);
-
-  CAN0.setMode(MCP_NORMAL);
-  
-  // Configure pin for INT input
-  pinMode(CAN0_INT, INPUT);
-
-  // Starts display
-  u8g2.begin();
-
-  // Set standard font
-  u8g2.setFont(u8g2_font_chikita_tf);
-
-  // Set initial contrast
-  u8g2.setContrast(contrast);
-}
-
 // ------------------ CAN data sorter returning array pointer ---------------
 int* processCanData() {
 
@@ -186,7 +163,7 @@ int* processCanData() {
   //  ID 0x0BD BYT0+1:CUSTOM_FLAGS BYT2:HI_TMP BYT3:LO_TMP BYT4:COUNTER BYT5:BMS_STATUS BYT6:RELAY_STATE BYT7:CRC
   //  ID 0x0BE BYT0:HI_CELL_VOLT BYT1:LO_CELL_VOLT BYT3:BLANK BYT4:CRC
 
-  static int canDataArr[20];
+  static int canDataArr[20] = {0};
 
   // Sort CANBus data buffer
    if (rxId == 0x03B) {
@@ -228,7 +205,7 @@ int* processCanData() {
 void voltage(byte angle) {
 
   // Map voltage from 44,0V - 64,0V between 0 - 50 degrees
-  m = map(processCanData()[0], 440, 640, 0, 50);
+  m = map(DATA()[0], 440, 640, 0, 50);
 
   // Display dimensions
   byte xcenter = X_MAX/2;
@@ -288,20 +265,20 @@ void voltage(byte angle) {
 void amperage(byte angle) {
 
   // Map various amp readings to between 0 - 100 degrees. 0 = discharge 50 = charge
-  if (processCanData()[1] > 1000 || processCanData()[1] < -1000) {
-    m = map(processCanData()[1], -2500, 2500, 50, 0);
+  if (DATA()[1] > 1000 || DATA()[1] < -1000) {
+    m = map(DATA()[1], -2500, 2500, 50, 0);
   }
-  else if (processCanData()[1] > 500 || processCanData()[1] < -500) {
-    m = map(processCanData()[1], -1000, 1000, 50, 0);
+  else if (DATA()[1] > 500 || DATA()[1] < -500) {
+    m = map(DATA()[1], -1000, 1000, 50, 0);
   }
-  else if (processCanData()[1] > 100 || processCanData()[1] < -100) {
-    m = map(processCanData()[1], -500, 500, 50, 0);
+  else if (DATA()[1] > 100 || DATA()[1] < -100) {
+    m = map(DATA()[1], -500, 500, 50, 0);
   }
-  else  if (processCanData()[1] > 50 || processCanData()[1] < -50) {
-    m = map(processCanData()[1], -100, 100, 50, 0);
+  else  if (DATA()[1] > 50 || DATA()[1] < -50) {
+    m = map(DATA()[1], -100, 100, 50, 0);
   }
   else {
-    m = map(processCanData()[1], -50, 50, 50, 0);
+    m = map(DATA()[1], -50, 50, 50, 0);
   }
 
   // Display dimensions
@@ -334,22 +311,22 @@ void amperage(byte angle) {
   // Draw 3 different scale labels
   u8g2.setFont(u8g2_font_chikita_tf);
   // Scale from -250 till 250
-  if (processCanData()[1] > 1000 || processCanData()[1] < -1000) {
+  if (DATA()[1] > 1000 || DATA()[1] < -1000) {
     u8g2.drawStr(0, 22, "250");                   
     u8g2.drawStr(106, 22, "-250");
   }
   // Scale from -100 till 100
-  else if (processCanData()[1] > 500 || processCanData()[1] < -500) {
+  else if (DATA()[1] > 500 || DATA()[1] < -500) {
     u8g2.drawStr(0, 24, "100");                   
     u8g2.drawStr(110, 24, "-100");
   }
   // Scale from -50 till 50
-  else if (processCanData()[1] > 100 || processCanData()[1] <-100) {
+  else if (DATA()[1] > 100 || DATA()[1] <-100) {
     u8g2.drawStr(0, 26, "50");                   
     u8g2.drawStr(112, 26, "-50");
   }
   // Scale from -10 till 10
-  else if (processCanData()[1] > 50 || processCanData()[1] < -50) {
+  else if (DATA()[1] > 50 || DATA()[1] < -50) {
     u8g2.drawStr(0, 28, "10");                   
     u8g2.drawStr(115, 28, "-10");
   }
@@ -373,7 +350,7 @@ void power(byte angle) {
   m = map(p, 0, 10000, 0, 90);
 
   // Watt calculation
-  p = abs(processCanData()[1]) / 10.0 * processCanData()[0] / 10.0; // have tried multiplying and then divide by 100, but p needs to be 32-bit and still cause occasional 0 reading
+  p = abs(DATA()[1]) / 10.0 * DATA()[0] / 10.0; // have tried multiplying and then divide by 100, but p needs to be 32-bit and still cause occasional 0 reading
   
   // Display dimensions
   byte xcenter = X_MAX/2;
@@ -428,23 +405,23 @@ void power(byte angle) {
   u8g2.print(p);
   
   // Draw lightening bolt when charger safety relay is energised and battery charging
-  if (processCanData()[10] < 0 && (processCanData()[16] & 0x04) == 0x04) {
+  if (DATA()[10] < 0 && (DATA()[16] & 0x04) == 0x04) {
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 40, 67);
   }
    // Draw sun when charge relay is closed and battery charging
-  else if ( (processCanData()[16] & 0x02) == 0x02 && processCanData()[10] < 0 ) {
+  else if ( (DATA()[16] & 0x02) == 0x02 && DATA()[10] < 0 ) {
     u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
     u8g2.drawGlyph(4, 39, 69);
   }
   // Draw warning symbol at and below 20% State of Charge if charge safety relay is open or if discharge current is 90% of dcl
-  else if ( (processCanData()[16] & 0x04) != 0x04 && processCanData()[2] <= 40 || ( processCanData()[8] * 9 ) < processCanData()[10] ) {   // processCanData()[2] from canbus is multiplied by 2 and avgI is multiplied by 2 hence 90% of DCL
+  else if ( (DATA()[16] & 0x04) != 0x04 && DATA()[2] <= 40 || ( DATA()[8] * 9 ) < DATA()[10] ) {   // DATA()[2] from canbus is multiplied by 2 and avgI is multiplied by 2 hence 90% of DCL
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 39, 71);
   }
 
   // Draw wrench icon if BMS flags hasn't been seen
-  if (processCanData()[17] != wrench) {
+  if (DATA()[17] != wrench) {
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(3, 62, 72);
   }
@@ -452,26 +429,26 @@ void power(byte angle) {
   // Draw battery icon
   u8g2.drawFrame( 1, 0, 22, 9);
   u8g2.drawFrame( 23, 2, 2, 5);
-  u8g2.drawBox( 3, 2, processCanData()[2]/2*0.18, 5);
+  u8g2.drawBox( 3, 2, DATA()[2]/2*0.18, 5);
 
   // Draw state of charge
   u8g2.setCursor(4,16);
   u8g2.setFont(u8g2_font_chikita_tf);
-  u8g2.print(processCanData()[2] / 2); u8g2.print('%');
+  u8g2.print(DATA()[2] / 2); u8g2.print('%');
   
   // Draw clock
   uint16_t h;
   byte m;
   char time_str[12];
   // Discharge
-  if (processCanData()[10] > 0) {
-    h = processCanData()[2] / (processCanData()[10]/10.0);
-    m = (processCanData()[2] / (processCanData()[10]/10.0) - h) * 60;
+  if (DATA()[10] > 0) {
+    h = DATA()[2] / (DATA()[10]/10.0);
+    m = (DATA()[2] / (DATA()[10]/10.0) - h) * 60;
   }
   // Charge
   else {
-    h = (200 - processCanData()[2]) / (abs(processCanData()[10])/10.0);
-    m = ((200 - processCanData()[2]) / (abs(processCanData()[10])/10.0) - h) * 60;
+    h = (200 - DATA()[2]) / (abs(DATA()[10])/10.0);
+    m = ((200 - DATA()[2]) / (abs(DATA()[10])/10.0) - h) * 60;
   }
   // Adjust x-positon
   if (h > 120) { // days
@@ -505,94 +482,94 @@ void power(byte angle) {
 void bars() {
 
   // Draw pack volt bar
-  byte pV = ((processCanData()[0]/10.0-43.2)*2.083); // Box length 35/16.8 (volt difference max to min)
+  byte pV = ((DATA()[0]/10.0-43.2)*2.083); // Box length 35/16.8 (volt difference max to min)
   u8g2.setCursor(2, 5);
-  u8g2.print(processCanData()[0] / 10.0, 1); // One decimal
+  u8g2.print(DATA()[0] / 10.0, 1); // One decimal
   u8g2.drawStr(1, 56, "Pack");
   u8g2.drawStr(2, 63, "Volt");
   u8g2.drawFrame(5, 8, 11, 38);
   u8g2.drawBox(7, 44-pV, 7, pV);
   
   // Draw Min and Max cell voltage bars
-  byte lCb = (processCanData()[3] - 270) * 0.34;
-  byte hCb = (processCanData()[4] - 270) * 0.34;
+  byte lCb = (DATA()[3] - 270) * 0.34;
+  byte hCb = (DATA()[4] - 270) * 0.34;
 
   u8g2.setCursor(28, 5);
-  u8g2.print(processCanData()[3] / 100.0, 2);  // Two decimals
+  u8g2.print(DATA()[3] / 100.0, 2);  // Two decimals
   u8g2.drawStr(28, 56, "Low");
   u8g2.drawStr(29, 63, "Cell");
   u8g2.drawFrame(31, 8, 11, 38);
-  if (processCanData()[3] <= 400 && processCanData()[3] >= 270) {
+  if (DATA()[3] <= 400 && DATA()[3] >= 270) {
     u8g2.drawBox(33, 44-lCb, 7, lCb);
   }
   u8g2.setCursor(54, 5);
-  u8g2.print(processCanData()[4] / 100.0, 2); // Two decimals
+  u8g2.print(DATA()[4] / 100.0, 2); // Two decimals
   u8g2.drawStr(54, 56, "High");
   u8g2.drawStr(55, 63, "Cell");
   u8g2.drawFrame(57, 8, 11, 38);
-  if (processCanData()[4] <= 400 && processCanData()[4] >= 270) {
+  if (DATA()[4] <= 400 && DATA()[4] >= 270) {
     u8g2.drawBox(59, 44-hCb, 7, hCb);
   }
   
   // Draw health bar
-  byte hBar = processCanData()[5] * 0.34;
-  if (processCanData()[5] >= 0 && processCanData()[5] <= 9) {
+  byte hBar = DATA()[5] * 0.34;
+  if (DATA()[5] >= 0 && DATA()[5] <= 9) {
     u8g2.setCursor(88, 5);  // Shift position at and above 0%
   }
   else {                    // Shift position above 9%
     u8g2.setCursor(84, 5);
   }
-  u8g2.print(processCanData()[5]);
+  u8g2.print(DATA()[5]);
   u8g2.drawStr(76, 56, "Health");
   u8g2.drawStr(86, 63, "%");
   u8g2.drawFrame(84, 8, 11, 38);
-  if (processCanData()[5] <= 100 && processCanData()[5] >= 0) {
+  if (DATA()[5] <= 100 && DATA()[5] >= 0) {
     u8g2.drawBox(86, 44-hBar, 7, hBar);
   }
   
   // Draw ampere bar
-  byte aBar = abs(processCanData()[1])*0.0137;
-  if (processCanData()[1] >= 0 && processCanData()[1] <= 90) {               // Shift position at and above 0A
+  byte aBar = abs(DATA()[1])*0.0137;
+  if (DATA()[1] >= 0 && DATA()[1] <= 90) {               // Shift position at and above 0A
     u8g2.setCursor(111, 5);
   }
-  else if (processCanData()[1] > 90 && processCanData()[1] <= 199) {         // Shift position above 9A
+  else if (DATA()[1] > 90 && DATA()[1] <= 199) {         // Shift position above 9A
     u8g2.setCursor(113, 5);
   }
-  else if (processCanData()[1] > 190 && processCanData()[1] <= 999) {        // Shift position above 19A
+  else if (DATA()[1] > 190 && DATA()[1] <= 999) {        // Shift position above 19A
     u8g2.setCursor(111, 5);
   }  
-  else if (processCanData()[1] > 999 && processCanData()[1] <= 1999) {       // Shift position above 99A
+  else if (DATA()[1] > 999 && DATA()[1] <= 1999) {       // Shift position above 99A
     u8g2.setCursor(110, 5);
   }
-  else if (processCanData()[1] > 1999) {                    // Shift position above 199A
+  else if (DATA()[1] > 1999) {                    // Shift position above 199A
     u8g2.setCursor(108, 5);
   }
-  else if (processCanData()[1] < 0 && processCanData()[1] >= -99) {        // Shift position below 0A
+  else if (DATA()[1] < 0 && DATA()[1] >= -99) {        // Shift position below 0A
     u8g2.setCursor(105, 5);
   }
-  else if (processCanData()[1] < -99 && processCanData()[1] > -200) {       // Shift position below -9A
+  else if (DATA()[1] < -99 && DATA()[1] > -200) {       // Shift position below -9A
     u8g2.setCursor(107, 5);
   }
-  else if (processCanData()[1] < -199 && processCanData()[1] >= -999) {     // Shift position below -19A
+  else if (DATA()[1] < -199 && DATA()[1] >= -999) {     // Shift position below -19A
     u8g2.setCursor(106, 5);
   }
-  else if (processCanData()[1] < -999) {                  // Shift position below -99A
+  else if (DATA()[1] < -999) {                  // Shift position below -99A
     u8g2.setCursor(104, 5);
   }
-  if (processCanData()[1] < 100 && processCanData()[1] > -100) {            // Prints single decimal above -10A and below 10A
-    u8g2.print(processCanData()[1]/10.0, 1);
+  if (DATA()[1] < 100 && DATA()[1] > -100) {            // Prints single decimal above -10A and below 10A
+    u8g2.print(DATA()[1]/10.0, 1);
   }
   else {                                // Prints amp without decimal at and above 10A and at and below -10A
-    u8g2.print(processCanData()[1]/10.0, 0);
+    u8g2.print(DATA()[1]/10.0, 0);
   }
   u8g2.drawStr(108, 56, "Amp");
   u8g2.drawFrame(111, 8, 11, 38);
   // No bar displayed below 7,3A
-  if (abs(processCanData()[1]) > 72 && abs(processCanData()[1]) <= 250) {
+  if (abs(DATA()[1]) > 72 && abs(DATA()[1]) <= 250) {
     u8g2.drawBox(113, 45-aBar, 7, aBar);
   }
   // Full bar at 250A
-  else if (abs(processCanData()[1]) > 250) {
+  else if (abs(DATA()[1]) > 250) {
     u8g2.drawBox(113, 10, 7, 34);
   }
 }
@@ -600,7 +577,7 @@ void bars() {
 
 void text() {
 
-  wrench = processCanData()[17];
+  wrench = DATA()[17];
 
   // Draw horisontal lines
   u8g2.drawHLine(0, 7, 128);
@@ -619,7 +596,7 @@ void text() {
   u8g2.drawStr(0, 5, "Relay Status");
   u8g2.drawStr(0, 16, "Discharge");
   u8g2.setFont(u8g2_font_open_iconic_check_1x_t);
-  if ((processCanData()[16] & 0x01) == 0x01) {
+  if ((DATA()[16] & 0x01) == 0x01) {
     u8g2.drawGlyph(52, 18, 64);
   }
   else {
@@ -628,7 +605,7 @@ void text() {
   u8g2.setFont(u8g2_font_chikita_tf);
   u8g2.drawStr(0, 25, "Charge");
   u8g2.setFont(u8g2_font_open_iconic_check_1x_t);
-  if ((processCanData()[16] & 0x02) == 0x02) {
+  if ((DATA()[16] & 0x02) == 0x02) {
     u8g2.drawGlyph(52, 27, 64);
   }
   else {
@@ -637,7 +614,7 @@ void text() {
   u8g2.setFont(u8g2_font_chikita_tf);
   u8g2.drawStr(0, 34, "Chg Safety");
   u8g2.setFont(u8g2_font_open_iconic_check_1x_t);
-  if ((processCanData()[16] & 0x04) == 0x04) {
+  if ((DATA()[16] & 0x04) == 0x04) {
     u8g2.drawGlyph(52, 36, 64);
   }
   else {
@@ -645,42 +622,42 @@ void text() {
   }
 
   // Current limit 
-  u8g2.setFont(u8g2_font_chikita_tf); 
-  u8g2.drawStr(0, 44, "Current Limit"); 
+  u8g2.setFont(u8g2_font_chikita_tf);
+  u8g2.drawStr(0, 44, "Current Limit");
   // Discharge current limit 
-  u8g2.drawStr(0, 55, "DCH"); 
-  if (processCanData()[8] >= 0 && processCanData()[8] < 10) { 
-    u8g2.setCursor(47, 55); 
+  u8g2.drawStr(0, 55, "DCH");
+  if (DATA()[8] >= 0 && DATA()[8] < 10) { 
+    u8g2.setCursor(47, 55);
   }
-  else if (processCanData()[8] >= 10 && processCanData()[8] < 20) {
+  else if (DATA()[8] >= 10 && DATA()[8] < 20) {
     u8g2.setCursor(42, 64);
   }
-  else if (processCanData()[8] >= 20 && processCanData()[8] < 100) { 
-    u8g2.setCursor(40, 55); 
-  } 
-  else if (processCanData()[8] >= 100 && processCanData()[8] < 200) { 
-    u8g2.setCursor(36, 55); 
+  else if (DATA()[8] >= 20 && DATA()[8] < 100) { 
+    u8g2.setCursor(40, 55);
+  }
+  else if (DATA()[8] >= 100 && DATA()[8] < 200) { 
+    u8g2.setCursor(36, 55);
   }
   else {
     u8g2.setCursor(34, 55);
   }
-  u8g2.print(processCanData()[8]); u8g2.print(" A");
+  u8g2.print(DATA()[8]); u8g2.print(" A");
      
   // Charge current limit
-  u8g2.drawStr(0, 64, "CHG"); 
-  if (processCanData()[7] >= 0 && processCanData()[7] < 10) { 
-    u8g2.setCursor(47, 64); 
-  } 
-  else if (processCanData()[7] >= 10 && processCanData()[7] < 20) { 
-    u8g2.setCursor(42, 64); 
-  } 
-  else if (processCanData()[7] >= 20 && processCanData()[7] < 100) { 
-    u8g2.setCursor(40, 64); 
+  u8g2.drawStr(0, 64, "CHG");
+  if (DATA()[7] >= 0 && DATA()[7] < 10) { 
+    u8g2.setCursor(47, 64);
+  }
+  else if (DATA()[7] >= 10 && DATA()[7] < 20) { 
+    u8g2.setCursor(42, 64);
+  }
+  else if (DATA()[7] >= 20 && DATA()[7] < 100) { 
+    u8g2.setCursor(40, 64);
   }
   else {
     u8g2.setCursor(36, 64);
   }
-  u8g2.print(processCanData()[7]); u8g2.print(" A"); 
+  u8g2.print(DATA()[7]); u8g2.print(" A");
   
   // Draw fault and bms status flags
   byte x = 66;         // x position for flags
@@ -688,197 +665,222 @@ void text() {
   u8g2.drawStr(69, 5, "Flags");
 
   // Flag internal communication fault
-  if (((processCanData()[11] & 0x0100) == 0x0100) && y <= 28) {
+  if (((DATA()[11] & 0x0100) == 0x0100) && y <= 28) {
     u8g2.drawStr(x, 16+y, "intCom");
     y += 7;
   }
   // Flag internal convertions fault
-  if (((processCanData()[11] & 0x0200) == 0x0200) && y <= 28) {
+  if (((DATA()[11] & 0x0200) == 0x0200) && y <= 28) {
     u8g2.drawStr(x-2, 16+y, "intConv");
     y += 7;
   }
   // Flag weak cell fault
-  if (((processCanData()[11] & 0x0400) == 0x0400) && y <= 28) {
+  if (((DATA()[11] & 0x0400) == 0x0400) && y <= 28) {
     // set cursor position for variable
     u8g2.setCursor(x + 6, 16 + y);
-    if ( processCanData()[1] < 0 ) {
-      u8g2.print(processCanData()[18]);
+    if ( DATA()[1] < 0 ) {
+      u8g2.print(DATA()[18]);
     }
     else {
-      u8g2.print(processCanData()[19]);
+      u8g2.print(DATA()[19]);
     }
     u8g2.drawStr(x, 16 + y, "wkCl");
     y += 7;
   }
   // Flag low cell fault
-  if (((processCanData()[11] & 0x0800) == 0x0800) && y <= 28) {
+  if (((DATA()[11] & 0x0800) == 0x0800) && y <= 28) {
     u8g2.drawStr(x, 16+y, "lowCell");
     y += 7;
   }
   // Flag open wire fault
-  if (((processCanData()[11] & 0x1000) == 0x1000) && y <= 28) {
+  if (((DATA()[11] & 0x1000) == 0x1000) && y <= 28) {
     u8g2.drawStr(x-2, 16+y, "opnWire");
     y += 7;
   }
   // Flag current sense fault
-  if (((processCanData()[11] & 0x2000) == 0x2000) && y <= 28) {
+  if (((DATA()[11] & 0x2000) == 0x2000) && y <= 28) {
     u8g2.drawStr(x-1, 16+y, "crrSns");
     y += 7;
   }
   // Flag volt sense fault
-  if (((processCanData()[11] & 0x4000) == 0x4000) && y <= 28) {
+  if (((DATA()[11] & 0x4000) == 0x4000) && y <= 28) {
     u8g2.drawStr(x, 16+y, "vltSns");
     y += 7;
   }
   // Flag volt redundancy fault
-  if (((processCanData()[11] & 0x8000) == 0x8000) && y <= 28) {
+  if (((DATA()[11] & 0x8000) == 0x8000) && y <= 28) {
     u8g2.drawStr(x-2, 16+y, "vltRdcy");
     y += 7;
   }
   // Flag weak pack fault
-  if (((processCanData()[11] & 0x0001) == 0x0001) && y <= 28) {
+  if (((DATA()[11] & 0x0001) == 0x0001) && y <= 28) {
     u8g2.drawStr(x-2, 16+y, "wkPack");
     y += 7;
   }
   // Flag thermistor fault
-  if (((processCanData()[11] & 0x0002) == 0x0002) && y <= 28) {
+  if (((DATA()[11] & 0x0002) == 0x0002) && y <= 28) {
     u8g2.drawStr(x, 16+y, "xThrm");
     y += 7;
   }
   // Flag charge limit enforcement fault
-  if (((processCanData()[11] & 0x0004) == 0x0004) && y <= 28) {
+  if (((DATA()[11] & 0x0004) == 0x0004) && y <= 28) {
     u8g2.drawStr(x, 16+y, "chgRly");
     y += 7;
   }
   // Flag discharge limit enforcement fault
-  if (((processCanData()[11] & 0x0008) == 0x0008) && y <= 28) {
+  if (((DATA()[11] & 0x0008) == 0x0008) && y <= 28) {
     u8g2.drawStr(x, 16+y, "dchRly");
     y += 7;
   }
   // Flag charge safety relay fault
-  if (((processCanData()[11] & 0x0010) == 0x0010) && y <= 28) {
+  if (((DATA()[11] & 0x0010) == 0x0010) && y <= 28) {
     u8g2.drawStr(x-2, 16+y, "sftyRly");
     y += 7;
   }
   // Flag internal memory fault
-  if (((processCanData()[11] & 0x0020) == 0x0020) && y <= 28) {
+  if (((DATA()[11] & 0x0020) == 0x0020) && y <= 28) {
     u8g2.drawStr(x, 16+y, "intMem");
     y += 7;
   }
   // Flag internal thermistor fault
-  if (((processCanData()[11] & 0x0040) == 0x0040) && y <= 28) {
+  if (((DATA()[11] & 0x0040) == 0x0040) && y <= 28) {
     u8g2.drawStr(x, 16+y, "intThm");
     y += 7;
   }
   // Flag internal logic fault
-  if (((processCanData()[11] & 0x0080) == 0x0080) && y <= 28) {
+  if (((DATA()[11] & 0x0080) == 0x0080) && y <= 28) {
     u8g2.drawStr(x, 16+y, "intLog");
     y += 7;
   }
 
   // Flag BMS status
-  if (((processCanData()[15] & 0x01) == 0x01) && y <= 28){
+  if (((DATA()[15] & 0x01) == 0x01) && y <= 28){
     u8g2.drawStr(x, 16+y, "VoltFS");
     y += 7;
   }
-  if (((processCanData()[15] & 0x02) == 0x02) && y <= 28) {
+  if (((DATA()[15] & 0x02) == 0x02) && y <= 28) {
     u8g2.drawStr(x-2, 16+y, "CurrFS");
     y += 7;
   }
-  if (((processCanData()[15] & 0x04) == 0x04) && y <= 28) {
+  if (((DATA()[15] & 0x04) == 0x04) && y <= 28) {
     u8g2.drawStr(x-1, 16+y, "RelyFS");
     y += 7;
   }
-  if (((processCanData()[15] & 0x08) == 0x08) && y <= 28) {
+  if (((DATA()[15] & 0x08) == 0x08) && y <= 28) {
     u8g2.drawStr(x-2, 16+y, "CellBlcg");
     y += 7;
   }
 
   // Draw count
-  if (processCanData()[14] < 10) {
+  if (DATA()[14] < 10) {
     u8g2.setCursor(111, 5);
   }
-  else if (processCanData()[14] >= 10 && processCanData()[14] < 100) {
+  else if (DATA()[14] >= 10 && DATA()[14] < 100) {
     u8g2.setCursor(109, 5);
   }
-  else if (processCanData()[14] >= 100 && processCanData()[14] < 120) {
+  else if (DATA()[14] >= 100 && DATA()[14] < 120) {
     u8g2.setCursor(107, 5);
   }
-  else if (processCanData()[14] >= 120 && processCanData()[14] < 200) {
+  else if (DATA()[14] >= 120 && DATA()[14] < 200) {
     u8g2.setCursor(106, 5);
   }
   else {
     u8g2.setCursor(105, 5);
   }
-  u8g2.print(processCanData()[14]);
+  u8g2.print(DATA()[14]);
 
   // Draw total pack cycles
   u8g2.drawStr(100, 14, "Cycles");
-  if (processCanData()[6] < 10) {
+  if (DATA()[6] < 10) {
     u8g2.setCursor(111, 24);
   }
-  else if (processCanData()[6] >= 10 && processCanData()[6] < 100) {
+  else if (DATA()[6] >= 10 && DATA()[6] < 100) {
     u8g2.setCursor(109, 24);
   }
-  else if (processCanData()[6] >= 100 && processCanData()[6] < 120) {
+  else if (DATA()[6] >= 100 && DATA()[6] < 120) {
     u8g2.setCursor(107, 24);
   }
-  else if (processCanData()[6] >= 120 && processCanData()[6] < 200) {
+  else if (DATA()[6] >= 120 && DATA()[6] < 200) {
     u8g2.setCursor(106, 24);
   }
   else {
     u8g2.setCursor(105, 24);
   }
-  u8g2.print(processCanData()[6]);
+  u8g2.print(DATA()[6]);
 
   // Draw Ah 
   u8g2.drawStr(109, 35, "Ah");
-  if (processCanData()[9] < 1000) {
+  if (DATA()[9] < 1000) {
     u8g2.setCursor(108, 44);
   }
-  if (processCanData()[9] >= 1000 && processCanData()[9] < 10000) { 
-    u8g2.setCursor(105, 44); 
-  } 
-  else if (processCanData()[9] > 11094 && processCanData()[9] < 11195) { 
-    u8g2.setCursor(106,  44); 
-  } 
+  if (DATA()[9] >= 1000 && DATA()[9] < 10000) { 
+    u8g2.setCursor(105, 44);
+  }
+  else if (DATA()[9] > 11094 && DATA()[9] < 11195) { 
+    u8g2.setCursor(106,  44);
+  }
   else { 
-    u8g2.setCursor(103,44); 
-  } 
-  u8g2.print(processCanData()[9]/100.0, 1); 
+    u8g2.setCursor(103,44);
+  }
+  u8g2.print(DATA()[9]/100.0, 1);
 
   // Draws pack temp
-  u8g2.drawStr(66, 53, "TempH"); 
-  u8g2.drawStr(100, 53, "TempL"); 
+  u8g2.drawStr(66, 53, "TempH");
+  u8g2.drawStr(100, 53, "TempL");
   // Highest temperature
-  if (processCanData()[12] >= 0 && processCanData()[12] < 10) { 
-    u8g2.setCursor(78, 64); 
-  } 
-  else if (processCanData()[12] >= 10) { 
-    u8g2.setCursor(75, 64); 
-  } 
-  else if (processCanData()[12] < 0 && processCanData()[12] > -10) { 
-    u8g2.setCursor(71, 64); 
-  } 
+  if (DATA()[12] >= 0 && DATA()[12] < 10) { 
+    u8g2.setCursor(78, 64);
+  }
+  else if (DATA()[12] >= 10) { 
+    u8g2.setCursor(75, 64);
+  }
+  else if (DATA()[12] < 0 && DATA()[12] > -10) { 
+    u8g2.setCursor(71, 64);
+  }
   else { 
-    u8g2.setCursor(68, 64); 
-  } 
-  u8g2.print(processCanData()[12]); 
+    u8g2.setCursor(68, 64);
+  }
+  u8g2.print(DATA()[12]);
   // Lowest temperature
-  if (processCanData()[13] >= 0 && processCanData()[13] < 10) { 
-    u8g2.setCursor(112, 64); 
-  } 
-  else if (processCanData()[13] >= 10) { 
-    u8g2.setCursor(109, 64); 
-  } 
-  else if (processCanData()[13] < 0 && processCanData()[13] > -10) { 
-    u8g2.setCursor(105, 64); 
-  } 
+  if (DATA()[13] >= 0 && DATA()[13] < 10) { 
+    u8g2.setCursor(112, 64);
+  }
+  else if (DATA()[13] >= 10) { 
+    u8g2.setCursor(109, 64);
+  }
+  else if (DATA()[13] < 0 && DATA()[13] > -10) { 
+    u8g2.setCursor(105, 64);
+  }
   else { 
-    u8g2.setCursor(102, 64); 
-  } 
-  u8g2.print(processCanData()[13]); 
-} 
+    u8g2.setCursor(102, 64);
+  }
+  u8g2.print(DATA()[13]);
+}
+
+// ------------------------ setup ------------------------------
+
+void setup() {
+  // Start serial monitor communication
+  //Serial.begin(115200);
+
+  // Initialise MCP2515 for 2-way data with baudrate 250kbps and 8MHz clock speed
+  CAN0.begin(MCP_ANY, CAN_250KBPS, MCP_8MHZ);
+
+  CAN0.setMode(MCP_NORMAL);
+  
+  // Configure pin for INT input
+  pinMode(CAN0_INT, INPUT);
+
+  // Starts display
+  u8g2.begin();
+
+  // Set standard font
+  u8g2.setFont(u8g2_font_chikita_tf);
+
+  // Set initial contrast
+  u8g2.setContrast(contrast);
+}
+
 // -------------------------- loop -------------------------
 
 void loop() {
@@ -919,7 +921,7 @@ void loop() {
 
   // Display voltage page
   if (hits == 1) {
-    u8g2.firstPage(); 
+    u8g2.firstPage();
     do {             
       voltage(va_angle);
     }
@@ -928,7 +930,7 @@ void loop() {
   
   // Display amperage page
   else if (hits == 2) {
-    u8g2.firstPage(); 
+    u8g2.firstPage();
     do {             
       amperage(va_angle);
     }

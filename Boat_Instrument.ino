@@ -40,10 +40,12 @@
 //  28/07/25  Trying hits = 0 instead of = STATION to see if it fixes the page jump during startup.
 //  31/07/25  Increased DCL to 8 bit due overflow, had to move relay state to next rxId. Set lightening bolt as priority over sun icon. Added warning symbol if current nearing dcl.
 //  03/08/25  Hits now STATION - 1 to start at correct page. Changed data types to save memory. *** Need some Amp gauge damping for the resolution change ***
-//  26/08/25  Crash and lag issues. Changed SCALING_RADIANS from I 8 decimals to 3 and increased time_str from 11 to 12.
+//  26/08/25  Crash and lag issues. Changed SCALING_RADIANS from 8 decimals to 3 and increased time_str from 11 to 12.
 //  20/09/25  CAN sort function added to return pointer array. Much better performance and also replaced global variables
+//  06/11/25  Increased time_str to 16 due to crash issues occuring after a few seconds
+//  09/11/25  Moved CAN processing from loop to inside processCanData function to avoid each display function receiving corrupt data, and reverted time_str back to 11 as it is not the cause of data stop
 //
-//  Sketch 27716 bytes
+//  Sketch 27682 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -76,7 +78,7 @@ MCP_CAN CAN0(10);                       // Set CS to pin 10 (chip select)
 #define SCALING_RADIANS 0.035           // (2 * PI / 180) - As angles are half values we need to multiply by 2 before converting degrees to radians
 #define STATION 1                       // 1 for cabin position 3 for helm
 
-//  CANBUS RX
+//  CANBUS RX - GLOBAL DUE TO CAN LIBRARY REQUIREMENT
 long unsigned int rxId;                 // Stores 4 bytes 32 bits
 unsigned char len = 0;                  // Stores at least 1 byte
 unsigned char rxBuf[8];                 // Stores 8 bytes, 1 character  = 1 byte
@@ -165,37 +167,42 @@ int* processCanData() {
 
   static int canDataArr[20] = {0};
 
-  // Sort CANBus data buffer
-   if (rxId == 0x03B) {
-    canDataArr[0] = (rxBuf[0] << 8) + rxBuf[1];   //rawU
-    canDataArr[1] = (rxBuf[2] << 8) + rxBuf[3];   //rawI
-    canDataArr[2] = rxBuf[6];                     //soc
-  }
-  if(rxId == 0x6B2) {
-    canDataArr[3] = ((rxBuf[0] << 8) + rxBuf[1]); //lC
-    canDataArr[4] = ((rxBuf[2] << 8) + rxBuf[3]); //hC
-    canDataArr[5] = (rxBuf[4]);                   //h
-    canDataArr[6] = (rxBuf[5] << 8) + rxBuf[6];   //cc
-  }
-  if (rxId == 0x0A9) {
-    canDataArr[7] = rxBuf[0];                     //ccl
-    canDataArr[8] = (rxBuf[1] << 8) + rxBuf[2];   //dcl
-    canDataArr[9] = (rxBuf[3] << 8) + rxBuf[4];   //ah
-    canDataArr[10] = (rxBuf[5] << 8) + rxBuf[6];  //avgI
-  }
-  if (rxId == 0x0BD) {
-    canDataArr[11] = (rxBuf[0] << 8) + rxBuf[1];  //fu
-    canDataArr[12] = rxBuf[2];                    //hT
-    canDataArr[13] = rxBuf[3];                    //lT
-    canDataArr[14] = rxBuf[4];                    //ct
-    canDataArr[15] = rxBuf[5];                    //st
-    canDataArr[16] = rxBuf[6];                    //ry
-    // Saves fault & status to "wrench" after reviewing text page
-    canDataArr[17] = rxBuf[0] + rxBuf[1] + rxBuf[5]; //fs
-  }
-  if (rxId == 0x0BE) {
-    canDataArr[18] = rxBuf[0];                    //hCid
-    canDataArr[19] = rxBuf[1];                    //lCid
+  // Read MCP2515
+  if(!digitalRead(CAN0_INT)) {
+    CAN0.readMsgBuf(&rxId, &len, rxBuf);
+
+    // Sort CANBus data buffer
+    if (rxId == 0x03B) {
+      canDataArr[0] = (rxBuf[0] << 8) + rxBuf[1];   //rawU
+      canDataArr[1] = (rxBuf[2] << 8) + rxBuf[3];   //rawI
+      canDataArr[2] = rxBuf[6];                     //soc
+    }
+    if(rxId == 0x6B2) {
+      canDataArr[3] = ((rxBuf[0] << 8) + rxBuf[1]); //lC
+      canDataArr[4] = ((rxBuf[2] << 8) + rxBuf[3]); //hC
+      canDataArr[5] = (rxBuf[4]);                   //h
+      canDataArr[6] = (rxBuf[5] << 8) + rxBuf[6];   //cc
+    }
+    if (rxId == 0x0A9) {
+      canDataArr[7] = rxBuf[0];                     //ccl
+      canDataArr[8] = (rxBuf[1] << 8) + rxBuf[2];   //dcl
+      canDataArr[9] = (rxBuf[3] << 8) + rxBuf[4];   //ah
+      canDataArr[10] = (rxBuf[5] << 8) + rxBuf[6];  //avgI
+    }
+    if (rxId == 0x0BD) {
+      canDataArr[11] = (rxBuf[0] << 8) + rxBuf[1];  //fu
+      canDataArr[12] = rxBuf[2];                    //hT
+      canDataArr[13] = rxBuf[3];                    //lT
+      canDataArr[14] = rxBuf[4];                    //ct
+      canDataArr[15] = rxBuf[5];                    //st
+      canDataArr[16] = rxBuf[6];                    //ry
+      // Saves fault & status to "wrench" after reviewing text page
+      canDataArr[17] = rxBuf[0] + rxBuf[1] + rxBuf[5]; //fs
+    }
+    if (rxId == 0x0BE) {
+      canDataArr[18] = rxBuf[0];                    //hCid
+      canDataArr[19] = rxBuf[1];                    //lCid
+    }
   }
   return canDataArr;
 }
@@ -439,7 +446,7 @@ void power(byte angle) {
   // Draw clock
   uint16_t h;
   byte m;
-  char time_str[12];
+  char time_str[11];
   // Discharge
   if (DATA()[10] > 0) {
     h = DATA()[2] / (DATA()[10]/10.0);
@@ -884,11 +891,6 @@ void setup() {
 // -------------------------- loop -------------------------
 
 void loop() {
-
-  // Read MCP2515
-  if(!digitalRead(CAN0_INT)) {
-    CAN0.readMsgBuf(&rxId, &len, rxBuf);
-  }
 
   // As a sine wave is fairly linear between 135deg and 225deg we use this for computing x and y positions for needle tip
   // needle tip x position relative to gauge centre, starts at minus moved to 0 and ends at positive e.g -60 -> 0 -> +60

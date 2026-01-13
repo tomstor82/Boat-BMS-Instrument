@@ -46,7 +46,7 @@
 //  09/11/25  Moved CAN processing from loop to inside processCanData function to avoid each display function receiving corrupt data, and reverted time_str back to 11 as it is not the cause of data stop
 //  14/12/25  Removed DATA macro for can_data function to see if this corrupt data. Next try disabling clock computations. 
 //
-//  Sketch 27682 bytes
+//  Sketch 25924 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone

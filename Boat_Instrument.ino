@@ -46,7 +46,7 @@
 //  09/11/25  Moved CAN processing from loop to inside processCanData function to avoid each display function receiving corrupt data, and reverted time_str back to 11 as it is not the cause of data stop
 //  14/12/25  Removed DATA macro for can_data function to see if this corrupt data. Next try disabling clock computations. 
 //
-//  Sketch 25924 bytes
+//  Sketch 25990 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -54,22 +54,22 @@
 //  MCP2515 TJ1A050 CANBus Transeiver
 //  Pushbutton and 10kOhm pull-DOWN resistor (At the time I was unaware of the boards internal pull-UP resistor)
 
-#include <U8g2lib.h>		                // U8g2 GUI library
-#include <mcp_can.h>		                // MCP CAN library
+#include <U8g2lib.h>                    // U8g2 GUI library
+#include <mcp_can.h>                    // MCP CAN library
 #include <SPI.h>                        // SPI library (CAN)
 #include <Wire.h>                       // I2C library (OLED)
 
 //  SH1106 OLED I2C U8g2 LIBRARY AND pinout (3,3 - 5V)
 U8G2_SH1106_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
-				                                // SDA pin A4 (I2C serial data)
-				                                // SCL pin A5 (I2C serial clock)
+                                        // SDA pin A4 (I2C serial data)
+                                        // SCL pin A5 (I2C serial clock)
 
 //  MCP2515 SPI CAN pinout (5V)
 #define CAN0_INT 9                      // Set INT to pin 9 (interrupt output)
 MCP_CAN CAN0(10);                       // Set CS to pin 10 (chip select)
                                         // SI pin 11 (SPI data in)
-				                                // SO pin 12 (SPI data out)
-				                                // SCK pin 13 (SPI clock)
+                                        // SO pin 12 (SPI data out)
+                                        // SCK pin 13 (SPI clock)
 
 // MACROS
 #define BUTTON_PIN 2
@@ -84,8 +84,8 @@ unsigned char len = 0;                  // Stores at least 1 byte
 unsigned char rxBuf[8];                 // Stores 8 bytes, 1 character  = 1 byte
 
 //  CANBUS TX
-byte mpo[8] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Multi-purpose output activation signal
-/*byte mpe[8] = {0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};*/ // Multi-purpose enable activation signal
+byte txBuf[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Byte1: MPO Byte2: MPE
+byte txBufCopy[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 //  Global variables
 byte wrench = 0;                        // Wrench icon variable
@@ -96,18 +96,16 @@ byte m = 0;
 byte va_angle = 0;
 byte p_angle = 0;
 
-//  Button settings
-long button_held_ms = 0;                // 4 byte variable for storing duration button is held down
-unsigned long button_touch_ms = 500;    // 4 byte variable for storing time button is first pushed; 500ms startup delay to avoid false button press detection
-byte button_previous_state = HIGH;      // Pin state before pushing or releasing button
-byte button_state = LOW;                // Variable for button pushed or not
-byte hits = STATION;                    // Initialised with -1 to start on correct page as button press is registered at startup
+byte hits = STATION;
 
 // ------------------------- Button press handling function -----------------------
 
 // Button checking function for PULL-DOWN
 void checkButton() {
-  button_state = digitalRead(BUTTON_PIN);
+
+  static unsigned long button_touch_ms = 500;
+  static byte button_previous_state = HIGH;
+  byte button_state = digitalRead(BUTTON_PIN);
   
   // Button pressed (rising edge) - HIGH means pressed with pull-down
   if (button_state == HIGH && button_previous_state == LOW) {
@@ -116,10 +114,10 @@ void checkButton() {
   
   // Button released (falling edge) - LOW means released with pull-down
   if (button_state == LOW && button_previous_state == HIGH) {
-    button_held_ms = millis() - button_touch_ms;
+    unsigned long button_held_ms = millis() - button_touch_ms;
     
     // Only process if button was held for reasonable time (debounce)
-    if (button_held_ms > 50 && button_held_ms < 5000) {
+    if ( button_held_ms > 50 && button_held_ms < 5000 ) {
       handleButtonPress(button_held_ms);
     }
   }
@@ -128,14 +126,15 @@ void checkButton() {
 
 // Button press handling function - SAME as before
 void handleButtonPress(unsigned long duration) {
-  // Very long press (3000ms or more) - send CAN message
-  if (duration >= 3000) {
-    CAN0.sendMsgBuf(0x32, 0, 8, mpo);
+
+  // Very long press (3000ms or more) - send CAN MPO message to clear BMS faults
+  if ( duration >= 3000 ) {
+    txBuf[0] = 0x01;
     return;
   }
   
   // Long press (500ms or more) - change contrast
-  if (duration >= 500) {
+  else if ( duration >= 500 ) {
     if (contrast == 255) {
       contrast = 100;
     } else if (contrast == 100) {
@@ -894,6 +893,21 @@ void loop() {
   while (!digitalRead(CAN0_INT)) { // this holds up code until finished, as it is imperative to read buffer to avoid CAN buffer overflow
     CAN0.readMsgBuf(&rxId, &len, rxBuf);
     can_data(true);
+  }
+  // Compare txBuf and txBufCopy by iteration to check if values changed
+  for ( byte i = 0; i < 7; i++ ) {
+    if ( txBuf[i] != txBufCopy[i] ) {
+      // Send buffer
+      CAN0.sendMsgBuf(0x32, 0, 8, txBuf);
+      // Equalize buffers
+      txBufCopy[i] = txBuf[i];
+      // Reset clear BMS MPO signal once sent
+      if ( i == 0 && txBuf[i] == 0x01 ) {
+        txBuf[i] = 0x00;
+      }
+      // Leave loop as msg was sent
+      break;
+    }
   }
 
   // As a sine wave is fairly linear between 135deg and 225deg we use this for computing x and y positions for needle tip

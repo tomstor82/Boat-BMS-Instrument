@@ -44,9 +44,10 @@
 //  20/09/25  CAN sort function added to return pointer array. Much better performance and also replaced global variables
 //  06/11/25  Increased time_str to 16 due to crash issues occuring after a few seconds
 //  09/11/25  Moved CAN processing from loop to inside processCanData function to avoid each display function receiving corrupt data, and reverted time_str back to 11 as it is not the cause of data stop
-//  14/12/25  Removed DATA macro for can_data function to see if this corrupt data. Next try disabling clock computations. 
+//  14/12/25  Removed DATA macro for can_data function to see if this corrupt data. Next try disabling clock computations.
+//  09/02/26  Moved button time global variables to local scope. CAN send now in loop if changes made to new 2 byte array later assembled to the full 8 bytes.
 //
-//  Sketch 25990 bytes
+//  Sketch 25964 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -83,9 +84,9 @@ long unsigned int rxId;                 // Stores 4 bytes 32 bits
 unsigned char len = 0;                  // Stores at least 1 byte
 unsigned char rxBuf[8];                 // Stores 8 bytes, 1 character  = 1 byte
 
-//  CANBUS TX
-byte txBuf[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Byte1: MPO Byte2: MPE
-byte txBufCopy[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+//  CANBUS TX ( 8 byte message assembled before sending )
+byte txBuf[4] = { 0x00, 0x00 };         // BYT0: MPO for clearing BMS faults, BYT1: MPE not assigned
+byte txBufCopy[2] = { 0x00, 0x00 };
 
 //  Global variables
 byte wrench = 0;                        // Wrench icon variable
@@ -134,7 +135,7 @@ void handleButtonPress(unsigned long duration) {
   }
   
   // Long press (500ms or more) - change contrast
-  else if ( duration >= 500 ) {
+  if ( duration >= 500 ) {
     if (contrast == 255) {
       contrast = 100;
     } else if (contrast == 100) {
@@ -895,10 +896,11 @@ void loop() {
     can_data(true);
   }
   // Compare txBuf and txBufCopy by iteration to check if values changed
-  for ( byte i = 0; i < 7; i++ ) {
+  for ( byte i = 0; i < 1; i++ ) {
     if ( txBuf[i] != txBufCopy[i] ) {
-      // Send buffer
-      CAN0.sendMsgBuf(0x32, 0, 8, txBuf);
+      // Extend from 2 to 8 bytes before sending buffer
+      byte txBufAssy[8] = { txBuf[0], txBuf[1], 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+      CAN0.sendMsgBuf(0x32, 8, txBufAssy);
       // Equalize buffers
       txBufCopy[i] = txBuf[i];
       // Reset clear BMS MPO signal once sent

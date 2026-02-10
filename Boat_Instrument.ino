@@ -46,8 +46,9 @@
 //  09/11/25  Moved CAN processing from loop to inside processCanData function to avoid each display function receiving corrupt data, and reverted time_str back to 11 as it is not the cause of data stop
 //  14/12/25  Removed DATA macro for can_data function to see if this corrupt data. Next try disabling clock computations.
 //  09/02/26  Moved button time global variables to local scope. CAN send now in loop if changes made to new 2 byte array later assembled to the full 8 bytes.
+//  10/09/26  Added code to enable engine room ventilation fan activation by temperature to txBuf in loop.
 //
-//  Sketch 25964 bytes
+//  Sketch 26006 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -910,6 +911,14 @@ void loop() {
       // Leave loop as msg was sent
       break;
     }
+  }
+  // Turn on engine room fan if highest temperature is 30 or above
+  if ( can_data()[13] >= 30 && txBuf[1] != 0x01 ) {
+    txBuf[1] = 0x01;
+  }
+  // Turn off engine room fan below 30
+  else if ( can_data()[13] < 30 && txBuf[1] == 0x01 ) {
+    txBuf[1] = 0x00;
   }
 
   // As a sine wave is fairly linear between 135deg and 225deg we use this for computing x and y positions for needle tip

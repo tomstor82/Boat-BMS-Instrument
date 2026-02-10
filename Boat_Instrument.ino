@@ -48,7 +48,7 @@
 //  09/02/26  Moved button time global variables to local scope. CAN send now in loop if changes made to new 2 byte array later assembled to the full 8 bytes.
 //  10/09/26  Added code to enable engine room ventilation fan activation by temperature to txBuf in loop.
 //
-//  Sketch 26006 bytes
+//  Sketch 26056 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -897,7 +897,7 @@ void loop() {
     can_data(true);
   }
   // Compare txBuf and txBufCopy by iteration to check if values changed
-  for ( byte i = 0; i < 1; i++ ) {
+  for ( byte i = 0; i < 2; i++ ) {
     if ( txBuf[i] != txBufCopy[i] ) {
       // Extend from 2 to 8 bytes before sending buffer
       byte txBufAssy[8] = { txBuf[0], txBuf[1], 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
@@ -905,15 +905,16 @@ void loop() {
       // Equalize buffers
       txBufCopy[i] = txBuf[i];
       // Reset clear BMS MPO signal once sent
-      if ( i == 0 && txBuf[i] == 0x01 ) {
-        txBuf[i] = 0x00;
+      if ( i == 0 && txBuf[0] == 0x01 ) {
+        txBuf[0] = 0x00;
       }
       // Leave loop as msg was sent
       break;
     }
   }
+
   // Turn on engine room fan if highest temperature is 30 or above
-  if ( can_data()[13] >= 30 && txBuf[1] != 0x01 ) {
+  if ( can_data()[13] >= 35 && txBuf[1] == 0x00 ) {
     txBuf[1] = 0x01;
   }
   // Turn off engine room fan below 30

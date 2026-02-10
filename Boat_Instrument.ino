@@ -86,7 +86,7 @@ unsigned char len = 0;                  // Stores at least 1 byte
 unsigned char rxBuf[8];                 // Stores 8 bytes, 1 character  = 1 byte
 
 //  CANBUS TX ( 8 byte message assembled before sending )
-byte txBuf[4] = { 0x00, 0x00 };         // BYT0: MPO for clearing BMS faults, BYT1: MPE not assigned
+byte txBuf[2] = { 0x00, 0x00 };         // BYT0: MPO for clearing BMS faults, BYT1: MPE starting ventilation fan
 byte txBufCopy[2] = { 0x00, 0x00 };
 
 //  Global variables
@@ -904,6 +904,13 @@ void loop() {
       CAN0.sendMsgBuf(0x32, 8, txBufAssy);
       // Equalize buffers
       txBufCopy[i] = txBuf[i];
+      /*// DEBUG 
+      if (txBuf[0]) {
+        Serial.println("Sending MPO signal");
+      }
+      else if (i==0 && !txBuf[0]) {
+        Serial.println("Stop MPO signal");
+      }*/
       // Reset clear BMS MPO signal once sent
       if ( i == 0 && txBuf[0] == 0x01 ) {
         txBuf[0] = 0x00;

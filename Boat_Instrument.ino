@@ -46,9 +46,9 @@
 //  09/11/25  Moved CAN processing from loop to inside processCanData function to avoid each display function receiving corrupt data, and reverted time_str back to 11 as it is not the cause of data stop
 //  14/12/25  Removed DATA macro for can_data function to see if this corrupt data. Next try disabling clock computations.
 //  09/02/26  Moved button time global variables to local scope. CAN send now in loop if changes made to new 2 byte array later assembled to the full 8 bytes.
-//  10/09/26  Added code to enable engine room ventilation fan activation by temperature to txBuf in loop. Reduced button press time for clear bms signal from 3 to 1s.
+//  10/09/26  Added code to enable engine room ventilation fan activation by temperature to txBuf in loop. Reduced button press time for clear bms signal from 3 to 1s. set CAN txBuf to continous to avoid BMS setting byte to 0 after 1s.
 //
-//  Sketch 26056 bytes
+//  Sketch 25962 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -87,7 +87,6 @@ unsigned char rxBuf[8];                 // Stores 8 bytes, 1 character  = 1 byte
 
 //  CANBUS TX ( 8 byte message assembled before sending )
 byte txBuf[2] = { 0x00, 0x00 };         // BYT0: MPO for clearing BMS faults, BYT1: MPE starting ventilation fan
-byte txBufCopy[2] = { 0x00, 0x00 };
 
 //  Global variables
 byte wrench = 0;                        // Wrench icon variable
@@ -896,32 +895,16 @@ void loop() {
     CAN0.readMsgBuf(&rxId, &len, rxBuf);
     can_data(true);
   }
-  // Compare txBuf and txBufCopy by iteration to check if values changed
-  for ( byte i = 0; i < 2; i++ ) {
-    if ( txBuf[i] != txBufCopy[i] ) {
-      // Extend from 2 to 8 bytes before sending buffer
-      byte txBufAssy[8] = { txBuf[0], txBuf[1], 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-      CAN0.sendMsgBuf(0x32, 8, txBufAssy);
-      // Equalize buffers
-      txBufCopy[i] = txBuf[i];
-      /*// DEBUG 
-      if (txBuf[0]) {
-        Serial.println("Sending MPO signal");
-      }
-      else if (i==0 && !txBuf[0]) {
-        Serial.println("Stop MPO signal");
-      }*/
-      // Reset clear BMS MPO signal once sent
-      if ( i == 0 && txBuf[0] == 0x01 ) {
-        txBuf[0] = 0x00;
-      }
-      // Leave loop as msg was sent
-      break;
-    }
+  // Send txBuf continuosly as BMS sets 0 if no data after 1s
+  byte txBufAssy[8] = { txBuf[0], txBuf[1], 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }; // create 8 byte msg
+  CAN0.sendMsgBuf(0x32, 0, 8, txBufAssy);
+  // Reset clear BMS MPO signal once sent
+  if ( txBuf[0] == 0x01 ) {
+    txBuf[0] = 0x00;
   }
 
-  // Turn on engine room fan if highest temperature is 30 or above
-  if ( can_data()[13] >= 35 && txBuf[1] == 0x00 ) {
+  // Turn on engine room fan if highest temperature is 32 or above
+  if ( can_data()[13] >= 32 && txBuf[1] == 0x00 ) {
     txBuf[1] = 0x01;
   }
   // Turn off engine room fan below 30

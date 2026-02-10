@@ -46,7 +46,7 @@
 //  09/11/25  Moved CAN processing from loop to inside processCanData function to avoid each display function receiving corrupt data, and reverted time_str back to 11 as it is not the cause of data stop
 //  14/12/25  Removed DATA macro for can_data function to see if this corrupt data. Next try disabling clock computations.
 //  09/02/26  Moved button time global variables to local scope. CAN send now in loop if changes made to new 2 byte array later assembled to the full 8 bytes.
-//  10/09/26  Added code to enable engine room ventilation fan activation by temperature to txBuf in loop.
+//  10/09/26  Added code to enable engine room ventilation fan activation by temperature to txBuf in loop. Reduced button press time for clear bms signal from 3 to 1s.
 //
 //  Sketch 26056 bytes
 //
@@ -129,14 +129,14 @@ void checkButton() {
 // Button press handling function - SAME as before
 void handleButtonPress(unsigned long duration) {
 
-  // Very long press (3000ms or more) - send CAN MPO message to clear BMS faults
-  if ( duration >= 3000 ) {
+  // Very long press (1000ms or more) - send CAN MPO message to clear BMS faults
+  if ( duration >= 1000 ) {
     txBuf[0] = 0x01;
     return;
   }
   
   // Long press (500ms or more) - change contrast
-  if ( duration >= 500 ) {
+  else if ( duration >= 500 ) {
     if (contrast == 255) {
       contrast = 100;
     } else if (contrast == 100) {
@@ -867,7 +867,7 @@ void text() {
 
 void setup() {
   // Start serial monitor communication
-  //Serial.begin(115200);
+  //if(Serial) Serial.begin(115200);
 
   // Initialise MCP2515 for 2-way data with baudrate 250kbps and 8MHz clock speed
   CAN0.begin(MCP_ANY, CAN_250KBPS, MCP_8MHZ);

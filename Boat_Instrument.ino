@@ -48,7 +48,7 @@
 //  09/02/26  Moved button time global variables to local scope. CAN send now in loop if changes made to new 2 byte array later assembled to the full 8 bytes.
 //  10/09/26  Added code to enable engine room ventilation fan activation by temperature to txBuf in loop. Reduced button press time for clear bms signal from 3 to 1s. set CAN txBuf to continous to avoid BMS setting byte to 0 after 1s.
 //
-//  Sketch 25962 bytes
+//  Sketch 25938 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone
@@ -86,7 +86,7 @@ unsigned char len = 0;                  // Stores at least 1 byte
 unsigned char rxBuf[8];                 // Stores 8 bytes, 1 character  = 1 byte
 
 //  CANBUS TX ( 8 byte message assembled before sending )
-byte txBuf[2] = { 0x00, 0x00 };         // BYT0: MPO for clearing BMS faults, BYT1: MPE starting ventilation fan
+byte txBuf[8] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };         // BYT0: MPO for clearing BMS faults, BYT1: MPE starting ventilation fan
 
 //  Global variables
 byte wrench = 0;                        // Wrench icon variable
@@ -896,8 +896,7 @@ void loop() {
     can_data(true);
   }
   // Send txBuf continuosly as BMS sets 0 if no data after 1s
-  byte txBufAssy[8] = { txBuf[0], txBuf[1], 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }; // create 8 byte msg
-  CAN0.sendMsgBuf(0x32, 0, 8, txBufAssy);
+  CAN0.sendMsgBuf(0x32, 0, 8, txBuf);
   // Reset clear BMS MPO signal once sent
   if ( txBuf[0] == 0x01 ) {
     txBuf[0] = 0x00;

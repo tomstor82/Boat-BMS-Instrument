@@ -47,8 +47,9 @@
 //  14/12/25  Removed DATA macro for can_data function to see if this corrupt data. Next try disabling clock computations.
 //  09/02/26  Moved button time global variables to local scope. CAN send now in loop if changes made to new 2 byte array later assembled to the full 8 bytes.
 //  10/09/26  Added code to enable engine room ventilation fan activation by temperature to txBuf in loop. Reduced button press time for clear bms signal from 3 to 1s. set CAN txBuf to continous to avoid BMS setting byte to 0 after 1s.
+//  21/02/26  Set 8th byte in txBuf if rxId detects already transmitted msg on can, to avoid duplicating msg from the other arduino station
 //
-//  Sketch 25938 bytes
+//  Sketch 26004 bytes
 //
 //  HARDWARE:
 //  Arduino Uno clone

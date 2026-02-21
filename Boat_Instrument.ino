@@ -86,7 +86,8 @@ unsigned char len = 0;                  // Stores at least 1 byte
 unsigned char rxBuf[8];                 // Stores 8 bytes, 1 character  = 1 byte
 
 //  CANBUS TX ( 8 byte message assembled before sending )
-byte txBuf[8] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };         // BYT0: MPO for clearing BMS faults, BYT1: MPE starting ventilation fan
+#define txId 0x32
+byte txBuf[8] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };         // BYT0: MPO for clearing BMS faults, BYT1: MPE starting ventilation fan. Using byte8 to check if id already exists on bus
 
 //  Global variables
 byte wrench = 0;                        // Wrench icon variable
@@ -201,6 +202,11 @@ int* can_data(byte read = false) {
       canDataArr[18] = rxBuf[0];                    //hCid
       canDataArr[19] = rxBuf[1];                    //lCid
     }
+    // used to determine if tx msg is already present on bus to avoid duplicate msg
+    if (rxId == txId) {
+      txBuf[7] = 0x01;
+    }
+    else txBuf[7] = 0x00;
   }
   return canDataArr;
 }
@@ -895,20 +901,22 @@ void loop() {
     CAN0.readMsgBuf(&rxId, &len, rxBuf);
     can_data(true);
   }
-  // Send txBuf continuosly as BMS sets 0 if no data after 1s
-  CAN0.sendMsgBuf(0x32, 0, 8, txBuf);
-  // Reset clear BMS MPO signal once sent
-  if ( txBuf[0] == 0x01 ) {
-    txBuf[0] = 0x00;
-  }
+  // Send txBuf continuosly as BMS sets 0 if no data after 1s, as long as msg not already on bus, as indicated by a set 8th byte in txbuf
+  if ( !txBuf[7] ) {
+    CAN0.sendMsgBuf(txId, 0, 8, txBuf);
+    // Reset clear BMS MPO signal once sent
+    if ( txBuf[0] == 0x01 ) {
+      txBuf[0] = 0x00;
+    }
 
-  // Turn on engine room fan if highest temperature is 32 or above
-  if ( can_data()[13] >= 32 && txBuf[1] == 0x00 ) {
-    txBuf[1] = 0x01;
-  }
-  // Turn off engine room fan below 30
-  else if ( can_data()[13] < 30 && txBuf[1] == 0x01 ) {
-    txBuf[1] = 0x00;
+    // Turn on engine room fan if highest temperature is 32 or above
+    if ( can_data()[13] >= 32 && txBuf[1] == 0x00 ) {
+      txBuf[1] = 0x01;
+    }
+    // Turn off engine room fan below 30
+    else if ( can_data()[13] < 30 && txBuf[1] == 0x01 ) {
+      txBuf[1] = 0x00;
+    }
   }
 
   // As a sine wave is fairly linear between 135deg and 225deg we use this for computing x and y positions for needle tip

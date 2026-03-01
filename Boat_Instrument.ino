@@ -451,7 +451,7 @@ void power(byte angle) {
   // Draw clock
   uint16_t h;
   byte m;
-  char time_str[11];
+  char time_str[10];
   // Discharge
   if (can_data()[11] > 0) {
     h = can_data()[2] / (can_data()[11]/10.0);
@@ -906,16 +906,16 @@ void loop() {
   if ( !txBuf[7] ) {
     CAN0.sendMsgBuf(txId, 0, 8, txBuf);
     // Reset clear BMS MPO signal once sent
-    if ( txBuf[0] == 0x01 ) {
+    if ( txBuf[0] ) {
       txBuf[0] = 0x00;
     }
 
     // Turn on engine room fan if highest temperature is 32 or above
-    if ( can_data()[13] >= 32 && txBuf[1] == 0x00 ) {
+    if ( can_data()[13] >= 32 && !txBuf[1] ) {
       txBuf[1] = 0x01;
     }
     // Turn off engine room fan below 30
-    else if ( can_data()[13] < 30 && txBuf[1] == 0x01 ) {
+    else if ( can_data()[13] < 30 && txBuf[1] ) {
       txBuf[1] = 0x00;
     }
   }

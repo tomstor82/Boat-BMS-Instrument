@@ -417,23 +417,23 @@ void power(byte angle) {
   u8g2.print(p);
   
   // Draw lightening bolt when charger safety relay is energised and battery charging
-  if (can_data()[10] < 0 && (can_data()[7] & 0x04) == 0x04) {
+  if ( can_data()[11] < 0 && (can_data()[7] & 0x04) == 0x04 ) {
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 40, 67);
   }
    // Draw sun when charge relay is closed and battery charging
-  else if ( (can_data()[7] & 0x02) == 0x02 && can_data()[10] < 0 ) {
+  else if ( can_data()[11] < 0 && (can_data()[7] & 0x02) == 0x02 ) {
     u8g2.setFont(u8g2_font_open_iconic_weather_2x_t);
     u8g2.drawGlyph(4, 39, 69);
   }
   // Draw warning symbol at and below 20% State of Charge if charge safety relay is open or if discharge current is 90% of dcl
-  else if ( (can_data()[7] & 0x04) != 0x04 && can_data()[2] <= 40 || ( can_data()[9] * 9 ) < can_data()[11] ) {   // can_data()[2] from canbus is multiplied by 2 and avgI is multiplied by 2 hence 90% of DCL
+  else if ( (can_data()[7] & 0x04) != 0x04 && can_data()[2] <= 40 || (can_data()[9] * 9) < can_data()[11] ) {   // can_data()[2] from canbus is multiplied by 2 and avgI is multiplied by 2 hence 90% of DCL
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(4, 39, 71);
   }
 
   // Draw wrench icon if BMS flags hasn't been seen
-  if (can_data()[17] != wrench) {
+  if ( can_data()[17] != wrench ) {
     u8g2.setFont(u8g2_font_open_iconic_embedded_2x_t);
     u8g2.drawGlyph(3, 62, 72);
   }
@@ -898,7 +898,7 @@ void setup() {
 void loop() {
 
   // Read MCP2515 buffers
-  while (!digitalRead(CAN0_INT)) { // this holds up code until finished, as it is imperative to read buffer to avoid CAN buffer overflow
+  if (!digitalRead(CAN0_INT)) { // this holds up code until finished, as it is imperative to read buffer to avoid CAN buffer overflow
     CAN0.readMsgBuf(&rxId, &len, rxBuf);
     can_data(true);
   }
